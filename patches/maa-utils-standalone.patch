@@ -1,0 +1,69 @@
+diff --git a/MaaUtils.cmake b/MaaUtils.cmake
+index bf69e20..d0a30ca 100644
+--- a/MaaUtils.cmake
++++ b/MaaUtils.cmake
+@@ -15,8 +15,18 @@ set(Boost_NO_WARN_NEW_VERSIONS ON)
+ set(MAAUTILS_DIR ${CMAKE_CURRENT_LIST_DIR})
+ 
+ list(APPEND CMAKE_MODULE_PATH "${MAAUTILS_DIR}/cmake/modules")
+-set(MAADEPS_DIR ${MAAUTILS_DIR}/MaaDeps)
+-include(${MAADEPS_DIR}/maadeps.cmake)
++# Allow a super-project to pin its own dependency directory (e.g. a vendored
++# deps/ tree) instead of the submodule's MaaDeps. Default remains MaaDeps.
++if(NOT DEFINED MAADEPS_DIR)
++    set(MAADEPS_DIR ${MAAUTILS_DIR}/MaaDeps)
++endif()
++# The super-project may provide its own CMake adapter (e.g. a repo-local
++# prebuilt deps/ tree) while MaaDeps is not present.
++if(DEFINED MAA_DEPS_CONFIG AND EXISTS "${MAA_DEPS_CONFIG}")
++    include(${MAA_DEPS_CONFIG})
++else()
++    include(${MAADEPS_DIR}/maadeps.cmake)
++endif()
+ 
+ # Basic compile and link configuration
+ include(${MAAUTILS_DIR}/cmake/config.cmake)
+diff --git a/include/MaaUtils/IOStream/BoostIO.hpp b/include/MaaUtils/IOStream/BoostIO.hpp
+index ed17ef3..89f9481 100644
+--- a/include/MaaUtils/IOStream/BoostIO.hpp
++++ b/include/MaaUtils/IOStream/BoostIO.hpp
+@@ -3,8 +3,35 @@
+ #define BOOST_PROCESS_USE_STD_FS 1
+ 
+ #include <boost/asio.hpp>
+-#include <boost/process.hpp>
+-#ifdef _WIN32
+-#include <boost/process/extend.hpp>
+-#include <boost/process/windows.hpp>
++
++// Boost 1.89's monolithic release moved the v1 Process API into
++// boost::process::v1. Modular/older Boost releases keep it at boost::process.
++// Keep both layouts working without patching Boost itself.
++#if defined(__has_include)
++#  if __has_include(<boost/process/v1.hpp>)
++#    include <boost/process/v1.hpp>
++namespace boost
++{
++namespace process
++{
++using namespace v1;
++}
++}
++#    ifdef _WIN32
++#      include <boost/process/v1/extend.hpp>
++#      include <boost/process/v1/windows.hpp>
++#    endif
++#  else
++#    include <boost/process.hpp>
++#    ifdef _WIN32
++#      include <boost/process/extend.hpp>
++#      include <boost/process/windows.hpp>
++#    endif
++#  endif
++#else
++#  include <boost/process.hpp>
++#  ifdef _WIN32
++#    include <boost/process/extend.hpp>
++#    include <boost/process/windows.hpp>
++#  endif
+ #endif

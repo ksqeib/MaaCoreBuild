@@ -39,6 +39,10 @@
       "linkage": "dynamic",
       "commit": "e962983da6daba7d0c12f6bf5f8ff7173be70982",
       "source": "MaaXYZ/FastDeploy"
+    },
+    "maautils": {
+      "repo": "https://github.com/MaaXYZ/MaaUtils.git",
+      "commit": "0c2556cfcff85eab8c2fa4529d71e37c310a3b78"
     }
   }
 }

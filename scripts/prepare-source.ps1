@@ -3,9 +3,10 @@
     Materialize an upstream MaaCore tree with the standalone build overlay.
 
 .DESCRIPTION
-    Clones the upstream-sync branch (or a local MaaCore checkout), then overlays:
+    Clones the upstream-sync branch (or a local MaaCore checkout), clones
+    MaaUtils at the commit pinned in tools/deps-versions.json, applies the
+    MaaUtils build patches, then overlays:
       overlay/CMakeLists.txt  -> MaaCore/CMakeLists.txt
-      MaaUtils/               -> MaaCore/MaaUtils/
       include/                -> MaaCore/include/
       cmake/                  -> MaaCore/cmake/
       tools/                  -> MaaCore/tools/
@@ -76,9 +77,40 @@ finally {
     }
 }
 
+$versionsPath = Join-Path $RepoRoot "tools\deps-versions.json"
+if (-not (Test-Path $versionsPath)) {
+    throw "Missing dependency version manifest: $versionsPath"
+}
+$versions = Get-Content -LiteralPath $versionsPath -Raw | ConvertFrom-Json
+$maaUtilsRepo = [string]$versions.dependencies.maautils.repo
+$maaUtilsCommit = [string]$versions.dependencies.maautils.commit
+if ([string]::IsNullOrWhiteSpace($maaUtilsRepo) -or [string]::IsNullOrWhiteSpace($maaUtilsCommit)) {
+    throw "deps-versions.json is missing maautils.repo/commit"
+}
+
+$maaUtilsDir = Join-Path $WorkDir "MaaUtils"
+Write-Host "==> Fetching MaaUtils ($maaUtilsRepo, commit=$maaUtilsCommit)"
+& git init --quiet $maaUtilsDir
+if ($LASTEXITCODE -ne 0) { throw "git init failed for MaaUtils" }
+& git -C $maaUtilsDir remote add origin $maaUtilsRepo
+& git -C $maaUtilsDir fetch --depth 1 origin $maaUtilsCommit
+if ($LASTEXITCODE -ne 0) { throw "Failed to fetch MaaUtils commit $maaUtilsCommit" }
+& git -C $maaUtilsDir checkout --detach FETCH_HEAD
+if ($LASTEXITCODE -ne 0) { throw "Failed to checkout MaaUtils commit $maaUtilsCommit" }
+
+$patchDir = Join-Path $RepoRoot "patches"
+if (Test-Path $patchDir) {
+    Get-ChildItem -LiteralPath $patchDir -File -Filter "maa-utils-*.patch" | Sort-Object Name | ForEach-Object {
+        Write-Host "==> Applying MaaUtils patch: $($_.Name)"
+        & git -C $maaUtilsDir apply --check $_.FullName
+        if ($LASTEXITCODE -ne 0) { throw "MaaUtils patch does not apply: $($_.FullName)" }
+        & git -C $maaUtilsDir apply $_.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Failed to apply MaaUtils patch: $($_.FullName)" }
+    }
+}
+
 Write-Host "==> Overlaying standalone build files"
 Copy-Item -LiteralPath (Join-Path $RepoRoot "overlay\CMakeLists.txt") -Destination (Join-Path $WorkDir "CMakeLists.txt") -Force
-Copy-Item -LiteralPath (Join-Path $RepoRoot "MaaUtils") -Destination (Join-Path $WorkDir "MaaUtils") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot "include") -Destination (Join-Path $WorkDir "include") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot "cmake") -Destination (Join-Path $WorkDir "cmake") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot "tools") -Destination (Join-Path $WorkDir "tools") -Recurse -Force

@@ -2,3 +2,6 @@
 /dist/
 /out/
 /build-*/
+.idea/
+.vs/
+.vscode/

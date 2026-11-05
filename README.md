@@ -5,11 +5,13 @@ MaaCore 的独立构建/发布仓库。
 本仓库不保存 MaaCore 源码，只保存：
 
 - `overlay/CMakeLists.txt`：把上游 MaaCore 改造成独立构建的 CMake 入口
-- `MaaUtils/`：MaaUtils 源码（vendored）
+- `patches/maa-utils-standalone.patch`：对上游 MaaUtils 的最小构建适配
 - `include/upstream`、`include/3rd`：MaaCore 需要的头文件
 - `cmake/`、`tools/`：依赖组装、构建、打包脚本
-- `scripts/prepare-source.ps1`：拉取上游代码并套用 overlay
+- `scripts/prepare-source.ps1`：拉取上游代码、MaaUtils 和 overlay
 - `.github/workflows/nightly.yml`：每日 nightly 构建与发布
+
+MaaUtils 不在本仓库内嵌，由 `tools/deps-versions.json` 固定到上游 `MaaXYZ/MaaUtils` 的某个 commit，`prepare-source.ps1` 拉取后再应用 `patches/maa-utils-standalone.patch`。这样既不会漂移，也能在需要时显式升级。
 
 ## 工作方式
 
