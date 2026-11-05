@@ -10,7 +10,7 @@
   - ONNXRuntime 1.19.2 DirectML（官方 NuGet，固定 URL）
   - Boost 1.89.0（优先从 `build-libs-v1` 预编译包获取；缺失时回退官方源码，仅编译 Regex）
   - zlib 1.3.1（优先从 `build-libs-v1` 预编译包获取；缺失时回退官方源码，静态库）
-- FastDeploy 1.0.7 是唯一没有匹配上游 Windows 预编译包的组件，单独发布一个约 15 MB 的小包（含 `DirectML.dll`）。
+- FastDeploy 1.0.8（`MaaXYZ/FastDeploy` 源码 + 固定 commit）没有匹配的上游 Windows 预编译包，由本仓库构建并单独发布一个约 15 MB 的小包（含 `DirectML.dll`）。
 - Boost.Regex / zlib 的静态库单独发布为约 27 MB 的 `build-libs-v1` 小包；它只是构建期输入，不进 SDK。
 - `MaaUtils` 由 `tools/deps-versions.json` 固定上游 ref，`prepare-source.ps1` 拉取，不 vendored。
 - `tools/fastdeploy-manifest.json` 现在锚定的是 **FastDeploy 小包**的 URL + SHA-256。
@@ -101,23 +101,39 @@ FastDeploy 小包按以下顺序取用：
 
 1. `-FastDeployFrom`；
 2. 现有 `deps/include/fastdeploy`；
-3. 下载 `-FastDeployUrl`（默认 `fastdeploy-v1`）。
+3. 下载 `-FastDeployUrl`（默认 `fastdeploy-v2`）。
 
 ## 发布 FastDeploy 小包
 
-```powershell
-powershell -File .\tools\pack-fastdeploy.ps1 -BundleVersion v1 -UpdateManifest
+FastDeploy 的 MaaCore 适配代码会跟随上游新增 API（例如 PP-OCRv6 的 `ppocr_v6.h`），所以不能一直使用旧的 `fastdeploy-v1` 二进制包。源码与 commit 固定在 `tools/deps-versions.json`：
+
+```json
+"fastdeploy": {
+  "repo": "https://github.com/MaaXYZ/FastDeploy.git",
+  "ref": "dev",
+  "commit": "e11935e4595360e7038573db1a7ab08dd0e096ec"
+}
 ```
 
-生成 `dist/MaaCore-fastdeploy-windows-x64-v1.zip`（约 15 MB），上传到 tag 为 `fastdeploy-v1` 的 GitHub Release，再提交 `tools/fastdeploy-manifest.json`。
+本地重建：
 
-当前 FastDeploy 包：
+```powershell
+# 1. 准备 OpenCV/ORT/Eigen/DirectML 依赖树（Debug + Release；会复用 fastdeploy-v1 里的 Eigen/DirectML）
+.\tools\build-upstream-deps.ps1 -DepsDir .\fd-deps -Full
 
-- 大小：约 15.2 MB
-- SHA-256：`0995ec629595419925f948fd0d0c6df2ab354531c275915fd77ad7f57050431c`
-- URL：`https://github.com/ksqeib/MaaCoreBuild/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip`
+# 2. 从固定 commit 的源码构建 FastDeploy（Release + Debug）
+.\tools\build-fastdeploy.ps1 `
+  -FastDeploySrc D:\self\maa\FastDeploy `
+  -BuildDepsRoot .\fd-deps `
+  -OutputDir .\fd-stage
 
-内容包括：
+# 3. 打包并更新 manifest
+.\tools\pack-fastdeploy.ps1 -DepsDir .\fd-stage -BundleVersion v2 -UpdateManifest
+```
+
+CI 使用 `.github/workflows/build-fastdeploy.yml`，发布后同样需要提交 `tools/fastdeploy-manifest.json`。
+
+FastDeploy 包内容：
 
 ```
 include/fastdeploy、Eigen、eigen3、nlohmann
@@ -247,6 +263,6 @@ Boost / zlib 是静态链接，不在 bundle 里。客户端只需要：
 1. **首次 bootstrap 仍要下载 OpenCV / ORT / FastDeploy**：约 200 MB；Boost/zlib 默认直接使用 `build-libs`，不再下载 Boost 源码或现场编译。之后有本地 `.bootstrap/deps` 缓存和 `deps/` 复用。
 2. **ORT Min/Max NaN patch 被去掉**：如果某个模型在 `Min/Max` 中遇到 NaN，结果会与旧 MaaDeps 版不同；当前 OCR/ONNX 测试未触发。
 3. **Boost.Asio socket 继承 patch 被去掉**：PlayTools 的 TCP socket 不再强制 `NO_HANDLE_INHERIT`；子进程侧仍有 MaaUtils 的 `prevent_inherit`。
-4. **FastDeploy 仍是现成二进制**：不是从源码现场编译，但 Windows 上它本来就没有 MaaDeps 源码 patch。
+4. **FastDeploy 从源码构建**：固定 `MaaXYZ/FastDeploy` commit，由 `build-fastdeploy.ps1` 产出；升级 MaaCore OCR 代码时可能需要同步升级 FastDeploy commit 并重发 `fastdeploy-vN`。
 5. **Debug 依赖按需组装**：默认 `-ReleaseOnly` 不生成 Debug Boost/zlib/OpenCV/运行库；需要 Debug 时用 `-Full`。FastDeploy 的 Debug 导入库/DLL 仍会保留，因为它的 CMake config 会校验所有配置。
 6. **升级依赖**：官方版本/URL/SHA-256 在 `tools/deps-versions.json`；修改后跑 `fetch-deps.ps1 -Force`。Boost/zlib 还需重新发布 `build-libs`。

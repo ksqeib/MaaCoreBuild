@@ -1,0 +1,137 @@
+name: Build FastDeploy bundle
+
+# Rebuild the Maa FastDeploy fork from source. Needed when MaaCore starts using
+# new FastDeploy APIs (e.g. PPOCRv6); the old fastdeploy-v1 binary bundle does
+# not contain them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundleVersion:
+        description: "Bundle version, e.g. v2 (bump when FastDeploy changes)"
+        required: true
+        default: v2
+        type: string
+  push:
+    tags:
+      - "fastdeploy-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-fastdeploy:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve bundle version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.bundleVersion }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            if ("${{ github.ref_type }}" -eq "tag") {
+              $version = "${{ github.ref_name }}" -replace '^fastdeploy-', ''
+            }
+            else {
+              $version = "v2"
+            }
+          }
+          $version = $version.Trim()
+          if ($version -notmatch '^v[0-9]+$') {
+            throw "Invalid bundle version '$version'; expected something like v2."
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Bundle version: $version"
+
+      - name: Clone FastDeploy
+        id: fastdeploy
+        shell: pwsh
+        run: |
+          $versions = Get-Content tools/deps-versions.json -Raw | ConvertFrom-Json
+          $fd = $versions.dependencies.fastdeploy
+          $repo = [string]$fd.repo
+          $commit = [string]$fd.commit
+          if ([string]::IsNullOrWhiteSpace($repo) -or [string]::IsNullOrWhiteSpace($commit)) {
+            throw "tools/deps-versions.json must pin fastdeploy.repo and fastdeploy.commit"
+          }
+
+          $src = Join-Path $env:RUNNER_TEMP "FastDeploy"
+          git init $src
+          git -C $src remote add origin $repo
+          git -C $src fetch --depth 1 origin $commit
+          git -C $src checkout FETCH_HEAD
+          git -C $src rev-parse HEAD
+          "src=$src" >> $env:GITHUB_OUTPUT
+
+      - name: Cache upstream downloads
+        uses: actions/cache@v4
+        with:
+          path: .bootstrap/upstream-deps
+          key: fastdeploy-build-deps-${{ runner.os }}-${{ hashFiles('tools/deps-versions.json') }}
+          restore-keys: |
+            fastdeploy-build-deps-${{ runner.os }}-
+
+      - name: Assemble OpenCV/ORT/Eigen deps
+        shell: pwsh
+        run: |
+          .\tools\build-upstream-deps.ps1 `
+            -FastDeployUrl "https://github.com/ksqeib/MaaCoreBuild/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip" `
+            -DepsDir "$env:RUNNER_TEMP\fd-deps" `
+            -Full
+
+      - name: Build FastDeploy from source
+        shell: pwsh
+        run: |
+          .\tools\build-fastdeploy.ps1 `
+            -FastDeploySrc "${{ steps.fastdeploy.outputs.src }}" `
+            -BuildDepsRoot "$env:RUNNER_TEMP\fd-deps" `
+            -OutputDir "$env:RUNNER_TEMP\fd-stage" `
+            -Parallel ([Environment]::ProcessorCount)
+
+      - name: Pack FastDeploy bundle
+        shell: pwsh
+        run: |
+          .\tools\pack-fastdeploy.ps1 `
+            -DepsDir "$env:RUNNER_TEMP\fd-stage" `
+            -BundleVersion "${{ steps.version.outputs.value }}" `
+            -OutputDir "$env:GITHUB_WORKSPACE\dist" `
+            -UpdateManifest
+
+      - name: Publish release
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.value }}"
+          $tag = "fastdeploy-$version"
+          $asset = Get-ChildItem -Path dist -File -Filter "MaaCore-fastdeploy-*.zip" | Select-Object -First 1
+          if ($null -eq $asset) { throw "No FastDeploy asset found in dist/" }
+
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "MaaCore FastDeploy $version" --notes "Build-time FastDeploy bundle (MaaXYZ/FastDeploy) for MaaCoreBuild. Not part of the SDK."
+          }
+          gh release upload $tag $asset.FullName --clobber
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastdeploy-${{ steps.version.outputs.value }}
+          path: |
+            dist/MaaCore-fastdeploy-*.zip
+            tools/fastdeploy-manifest.json
+          if-no-files-found: error
+
+      - name: Summary
+        shell: pwsh
+        run: |
+          Write-Host "Published fastdeploy-${{ steps.version.outputs.value }}."
+          Write-Host "Commit tools/fastdeploy-manifest.json so bootstrap/nightly pick it up."
+          Get-Content tools/fastdeploy-manifest.json

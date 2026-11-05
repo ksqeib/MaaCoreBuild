@@ -56,7 +56,7 @@ LICENSE.md
         },
         "fastdeploy_ppocr_maa.dll": {
           "dependency": "fastdeploy",
-          "version": "1.0.7",
+          "version": "1.0.8",
           "commit": "...",
           "sha256": "..."
         }

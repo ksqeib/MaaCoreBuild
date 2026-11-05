@@ -35,9 +35,11 @@
       "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
     },
     "fastdeploy": {
-      "version": "1.0.7",
+      "version": "1.0.8",
       "linkage": "dynamic",
-      "commit": "e962983da6daba7d0c12f6bf5f8ff7173be70982",
+      "repo": "https://github.com/MaaXYZ/FastDeploy.git",
+      "ref": "dev",
+      "commit": "e11935e4595360e7038573db1a7ab08dd0e096ec",
       "source": "MaaXYZ/FastDeploy"
     },
     "maautils": {

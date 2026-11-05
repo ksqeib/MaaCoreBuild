@@ -10,6 +10,7 @@ MaaCore 的独立构建/发布仓库。
 - `scripts/prepare-source.ps1`：拉取上游代码、MaaUtils 和 overlay
 - `.github/workflows/nightly.yml`：每日 nightly 构建与发布
 - `.github/workflows/build-libs.yml`：单独构建/发布 Boost.Regex + zlib 构建期依赖包
+- `.github/workflows/build-fastdeploy.yml`：从 MaaXYZ/FastDeploy 固定 commit 源码构建/发布 FastDeploy 包
 
 MaaUtils 不在本仓库内嵌，由 `tools/deps-versions.json` 固定到上游 `MaaXYZ/MaaUtils` 的 ref 或 commit，`prepare-source.ps1` 拉取后直接注入 `MAADEPS_DIR` / `MAA_DEPS_CONFIG` 适配。这样既不会漂移，也能在需要时显式升级。
 
@@ -88,7 +89,7 @@ SDK 里的 `deps.json` 使用 schemaVersion 2，运行库指向 `runtime-v1` bun
 
 ## 依赖资产
 
-- FastDeploy 构建包：`fastdeploy-v1`
+- FastDeploy 构建包：`fastdeploy-v2`（从 `MaaXYZ/FastDeploy` 固定 commit 源码构建）
 - 统一运行库包：`runtime-v1`
 - 构建期静态库包：`build-libs-v1`（Boost.Regex + zlib，头文件 + Release/Debug `.lib`）
 - 依赖版本：`tools/deps-versions.json`
