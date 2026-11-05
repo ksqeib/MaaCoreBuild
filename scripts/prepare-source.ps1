@@ -22,7 +22,9 @@ param(
     [string]$WorkDir = "",
     [string]$MaaCoreRepo = "https://github.com/ksqeib/MaaCore.git",
     [string]$Ref = "upstream-sync",
-    [string]$LocalSource = ""
+    [string]$LocalSource = "",
+    [string]$MaaCoreCommit = "",
+    [string]$MaaUtilsCommit = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +63,13 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to clone MaaCore from $source"
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($MaaCoreCommit)) {
+        & git -C $WorkDir fetch --depth 1 origin $MaaCoreCommit
+        if ($LASTEXITCODE -ne 0) { throw "Failed to fetch MaaCore commit $MaaCoreCommit" }
+        & git -C $WorkDir checkout --detach FETCH_HEAD
+        if ($LASTEXITCODE -ne 0) { throw "Failed to checkout MaaCore commit $MaaCoreCommit" }
+    }
 }
 finally {
     if (Test-Path $preserveRoot) {
@@ -84,22 +93,25 @@ if (-not (Test-Path $versionsPath)) {
 $versions = Get-Content -LiteralPath $versionsPath -Raw | ConvertFrom-Json
 $maaUtilsRepo = [string]$versions.dependencies.maautils.repo
 $maaUtilsRef = [string]$versions.dependencies.maautils.ref
-$maaUtilsCommit = [string]$versions.dependencies.maautils.commit
-if ([string]::IsNullOrWhiteSpace($maaUtilsRepo) -or ([string]::IsNullOrWhiteSpace($maaUtilsRef) -and [string]::IsNullOrWhiteSpace($maaUtilsCommit))) {
+$maaUtilsPinned = [string]$versions.dependencies.maautils.commit
+if (-not [string]::IsNullOrWhiteSpace($MaaUtilsCommit)) {
+    $maaUtilsPinned = $MaaUtilsCommit
+}
+if ([string]::IsNullOrWhiteSpace($maaUtilsRepo) -or ([string]::IsNullOrWhiteSpace($maaUtilsRef) -and [string]::IsNullOrWhiteSpace($maaUtilsPinned))) {
     throw "deps-versions.json is missing maautils.repo and maautils.ref/commit"
 }
 
 $maaUtilsDir = Join-Path $WorkDir "MaaUtils"
-if (-not [string]::IsNullOrWhiteSpace($maaUtilsRef)) {
-    Write-Host "==> Fetching MaaUtils latest ($maaUtilsRepo, ref=$maaUtilsRef)"
+if (-not [string]::IsNullOrWhiteSpace($maaUtilsPinned)) {
+    Write-Host "==> Fetching MaaUtils ($maaUtilsRepo, commit=$maaUtilsPinned)"
 }
 else {
-    Write-Host "==> Fetching MaaUtils ($maaUtilsRepo, commit=$maaUtilsCommit)"
+    Write-Host "==> Fetching MaaUtils latest ($maaUtilsRepo, ref=$maaUtilsRef)"
 }
 & git init --quiet $maaUtilsDir
 if ($LASTEXITCODE -ne 0) { throw "git init failed for MaaUtils" }
 & git -C $maaUtilsDir remote add origin $maaUtilsRepo
-$fetchRef = if (-not [string]::IsNullOrWhiteSpace($maaUtilsRef)) { $maaUtilsRef } else { $maaUtilsCommit }
+$fetchRef = if (-not [string]::IsNullOrWhiteSpace($maaUtilsPinned)) { $maaUtilsPinned } else { $maaUtilsRef }
 & git -C $maaUtilsDir fetch --depth 1 origin $fetchRef
 if ($LASTEXITCODE -ne 0) { throw "Failed to fetch MaaUtils ref $fetchRef" }
 & git -C $maaUtilsDir checkout --detach FETCH_HEAD

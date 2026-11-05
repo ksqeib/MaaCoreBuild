@@ -122,7 +122,10 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File .\scripts\prepare-source.ps1 -Ref "$env:MAA_REF"
+          powershell -ExecutionPolicy Bypass -File .\scripts\prepare-source.ps1 `
+            -Ref "$env:MAA_REF" `
+            -MaaCoreCommit "${{ steps.check.outputs.upstream }}" `
+            -MaaUtilsCommit "${{ steps.check.outputs.maaUtils }}"
 
       - name: Resolve nightly version
         if: steps.check.outputs.skip != 'true'
