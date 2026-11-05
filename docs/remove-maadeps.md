@@ -214,7 +214,7 @@ dist/MaaCore-sdk-windows-x64-v0.1.4-symbols.7z
 powershell -File .\tools\pack-runtime.ps1 -BundleVersion v1 -UpdateManifest
 ```
 
-生成 `dist/MaaCore-runtime-windows-x64-v1.zip`（约 37 MB），上传到 tag 为 `runtime-v1` 的 GitHub Release，再提交 `tools/runtime-manifest.json`。
+生成 `dist/MaaCore-runtime-windows-x64-v2.zip`（约 40 MB），上传到 tag 为 `runtime-v2` 的 GitHub Release，再提交 `tools/runtime-manifest.json`。
 
 运行库 bundle 只包含运行期 DLL：
 

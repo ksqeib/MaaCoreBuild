@@ -85,12 +85,12 @@ Boost.Regex / zlib 默认从 `build-libs-v1` 预编译包获取，不再下载 B
   - `MaaCore-sdk-windows-x64-nightly.7z`
   - `MaaCore-sdk-windows-x64-nightly-symbols.7z`
 
-SDK 里的 `deps.json` 使用 schemaVersion 2，运行库指向 `runtime-v1` bundle。
+SDK 里的 `deps.json` 使用 schemaVersion 2，运行库指向 `runtime-v2` bundle。
 
 ## 依赖资产
 
 - FastDeploy 构建包：`fastdeploy-v2`（从 `MaaXYZ/FastDeploy` 固定 commit 源码构建）
-- 统一运行库包：`runtime-v1`
+- 统一运行库包：`runtime-v2`
 - 构建期静态库包：`build-libs-v1`（Boost.Regex + zlib，头文件 + Release/Debug `.lib`）
 - 依赖版本：`tools/deps-versions.json`
 - 运行库清单：`tools/runtime-manifest.json`

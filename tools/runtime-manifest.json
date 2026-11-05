@@ -1,37 +1,37 @@
 {
-    "schemaVersion":  2,
-    "bundleVersion":  "v1",
-    "targets":  {
-                    "windows-x64":  {
-                                        "bundle":  {
-                                                       "url":  "https://github.com/ksqeib/MaaCoreBuild/releases/download/runtime-v1/MaaCore-runtime-windows-x64-v1.zip",
-                                                       "sha256":  "e6f040a80973bb2149d87aa2b428130c1a9be77ff5f571bb0b08927a6c900f9e",
-                                                       "size":  38417030
-                                                   },
-                                        "files":  {
-                                                      "opencv_world4_maa.dll":  {
-                                                                                    "dependency":  "opencv",
-                                                                                    "version":  "4.12.0",
-                                                                                    "sha256":  "0455560c75bc456b5f758c94af653b6f0397ed8a28b9605cf52c62e7c8f18781"
-                                                                                },
-                                                      "onnxruntime_maa.dll":  {
-                                                                                  "dependency":  "onnxruntime",
-                                                                                  "version":  "1.19.2",
-                                                                                  "flavor":  "directml",
-                                                                                  "sha256":  "410de3464172dae2945a4663f274e34c59965bc8233b0411de16baab56dda1a7"
-                                                                              },
-                                                      "DirectML.dll":  {
-                                                                           "dependency":  "directml",
-                                                                           "version":  "1.15.4",
-                                                                           "sha256":  "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
-                                                                       },
-                                                      "fastdeploy_ppocr_maa.dll":  {
-                                                                                       "dependency":  "fastdeploy",
-                                                                                       "version":  "1.0.7",
-                                                                                       "commit":  "e962983da6daba7d0c12f6bf5f8ff7173be70982",
-                                                                                       "sha256":  "52591c163ed7d6b8c0196a54ca5168fc1eb3b785f06253e200424771e9183fb6"
-                                                                                   }
-                                                  }
-                                    }
-                }
+  "schemaVersion": 2,
+  "bundleVersion": "v2",
+  "targets": {
+    "windows-x64": {
+      "bundle": {
+        "url": "https://github.com/ksqeib/MaaCoreBuild/releases/download/runtime-v2/MaaCore-runtime-windows-x64-v2.zip",
+        "sha256": "0c4b2c1135e8172157b472b433916aac212a4ee82280dc016d47e2e14b4e98d9",
+        "size": 39516630
+      },
+      "files": {
+        "opencv_world4_maa.dll": {
+          "dependency": "opencv",
+          "version": "4.12.0",
+          "sha256": "0455560c75bc456b5f758c94af653b6f0397ed8a28b9605cf52c62e7c8f18781"
+        },
+        "onnxruntime_maa.dll": {
+          "dependency": "onnxruntime",
+          "version": "1.19.2",
+          "flavor": "directml",
+          "sha256": "410de3464172dae2945a4663f274e34c59965bc8233b0411de16baab56dda1a7"
+        },
+        "DirectML.dll": {
+          "dependency": "directml",
+          "version": "1.15.4",
+          "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
+        },
+        "fastdeploy_ppocr_maa.dll": {
+          "dependency": "fastdeploy",
+          "version": "1.0.8",
+          "commit": "e11935e4595360e7038573db1a7ab08dd0e096ec",
+          "sha256": "02032c22bb7c11d02899f9555c69a499cac518a0dcd407d8df6c169b55de7014"
+        }
+      }
+    }
+  }
 }

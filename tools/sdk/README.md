@@ -33,9 +33,9 @@ LICENSE.md
   "runtime": {
     "windows-x64": {
       "bundle": {
-        "url": "https://.../MaaCore-runtime-windows-x64-v1.zip",
+        "url": "https://.../MaaCore-runtime-windows-x64-v2.zip",
         "sha256": "...",
-        "size": 38417030
+        "size": 39516630
       },
       "files": {
         "opencv_world4_maa.dll": {
