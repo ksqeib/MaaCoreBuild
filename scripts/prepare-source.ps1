@@ -83,20 +83,30 @@ if (-not (Test-Path $versionsPath)) {
 }
 $versions = Get-Content -LiteralPath $versionsPath -Raw | ConvertFrom-Json
 $maaUtilsRepo = [string]$versions.dependencies.maautils.repo
+$maaUtilsRef = [string]$versions.dependencies.maautils.ref
 $maaUtilsCommit = [string]$versions.dependencies.maautils.commit
-if ([string]::IsNullOrWhiteSpace($maaUtilsRepo) -or [string]::IsNullOrWhiteSpace($maaUtilsCommit)) {
-    throw "deps-versions.json is missing maautils.repo/commit"
+if ([string]::IsNullOrWhiteSpace($maaUtilsRepo) -or ([string]::IsNullOrWhiteSpace($maaUtilsRef) -and [string]::IsNullOrWhiteSpace($maaUtilsCommit))) {
+    throw "deps-versions.json is missing maautils.repo and maautils.ref/commit"
 }
 
 $maaUtilsDir = Join-Path $WorkDir "MaaUtils"
-Write-Host "==> Fetching MaaUtils ($maaUtilsRepo, commit=$maaUtilsCommit)"
+if (-not [string]::IsNullOrWhiteSpace($maaUtilsRef)) {
+    Write-Host "==> Fetching MaaUtils latest ($maaUtilsRepo, ref=$maaUtilsRef)"
+}
+else {
+    Write-Host "==> Fetching MaaUtils ($maaUtilsRepo, commit=$maaUtilsCommit)"
+}
 & git init --quiet $maaUtilsDir
 if ($LASTEXITCODE -ne 0) { throw "git init failed for MaaUtils" }
 & git -C $maaUtilsDir remote add origin $maaUtilsRepo
-& git -C $maaUtilsDir fetch --depth 1 origin $maaUtilsCommit
-if ($LASTEXITCODE -ne 0) { throw "Failed to fetch MaaUtils commit $maaUtilsCommit" }
+$fetchRef = if (-not [string]::IsNullOrWhiteSpace($maaUtilsRef)) { $maaUtilsRef } else { $maaUtilsCommit }
+& git -C $maaUtilsDir fetch --depth 1 origin $fetchRef
+if ($LASTEXITCODE -ne 0) { throw "Failed to fetch MaaUtils ref $fetchRef" }
 & git -C $maaUtilsDir checkout --detach FETCH_HEAD
-if ($LASTEXITCODE -ne 0) { throw "Failed to checkout MaaUtils commit $maaUtilsCommit" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to checkout MaaUtils ref $fetchRef" }
+
+$maaUtilsResolved = git -C $maaUtilsDir rev-parse HEAD
+Write-Host "    MaaUtils commit: $maaUtilsResolved"
 
 $patchDir = Join-Path $RepoRoot "patches"
 if (Test-Path $patchDir) {

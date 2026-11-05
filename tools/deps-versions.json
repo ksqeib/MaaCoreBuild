@@ -42,7 +42,7 @@
     },
     "maautils": {
       "repo": "https://github.com/MaaXYZ/MaaUtils.git",
-      "commit": "0c2556cfcff85eab8c2fa4529d71e37c310a3b78"
+      "ref": "master"
     }
   }
 }

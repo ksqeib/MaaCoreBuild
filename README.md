@@ -41,13 +41,12 @@ MaaCore 会大量 include `MaaUtils/...` 并链接 `MaaUtils.dll`。
 
 本仓库**不再 vendored MaaUtils 源码**，而是：
 
-- `tools/deps-versions.json` 固定 `MaaXYZ/MaaUtils` 的 repo + commit
-- `scripts/prepare-source.ps1` 拉取该 commit
+- `tools/deps-versions.json` 固定 `MaaXYZ/MaaUtils` 的 repo + ref（当前 `master`）
+- `scripts/prepare-source.ps1` 拉取该 ref 的最新 commit
 - 应用 `patches/maa-utils-standalone.patch`：
   - 允许外层工程覆盖 `MAADEPS_DIR` / 使用 `MAA_DEPS_CONFIG`
-  - 兼容 Boost 1.89 的 `boost::process::v1`
 
-升级 MaaUtils 时改 `maautils.commit` 后重新跑 `prepare-source`。如果 patch 上下文变化，`git apply` 会直接失败，避免静默漂移。
+升级/回退 MaaUtils 时修改 `maautils.ref`（也可以改成 `commit` 固定 SHA）后重新跑 `prepare-source`。如果 patch 上下文变化，`git apply` 会直接失败，避免静默漂移。
 
 ## 本地构建
 
@@ -65,6 +64,12 @@ powershell -File .\tools\package-sdk.ps1 -Version nightly -OutputDir D:\self\maa
 `.github/workflows/nightly.yml`：
 
 - 每天 18:00 UTC 自动运行，也支持手动触发
+- 运行前先比较：
+  - `MaaCore:upstream-sync` 最新 commit
+  - `MaaXYZ/MaaUtils` 当前 ref 的最新 commit
+  - build 仓库当前 commit
+- 三者都与上一次 nightly 相同则跳过，不重新构建/发布
+- 手动触发时可勾选 `force` 强制构建
 - 拉取最新 `upstream-sync`
 - 构建 MaaCore
 - 发布滚动 release `nightly`
