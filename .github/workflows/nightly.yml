@@ -59,8 +59,11 @@ jobs:
           $lastUpstream = ""
           $lastMaaUtils = ""
           $lastBuild = ""
-          $body = gh release view nightly --json body --jq .body 2>$null
-          if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($body)) {
+          $body = ""
+          gh release view nightly --json body --jq .body 2>$null | ForEach-Object { $body = $_ }
+          # "release not found" is expected on the first run; do not let its exit code fail the step.
+          $LASTEXITCODE = 0
+          if (-not [string]::IsNullOrWhiteSpace($body)) {
             if ($body -match 'upstream-commit=([0-9a-f]+)') { $lastUpstream = $Matches[1] }
             if ($body -match 'maa-utils-commit=([0-9a-f]+)') { $lastMaaUtils = $Matches[1] }
             if ($body -match 'build-commit=([0-9a-f]+)') { $lastBuild = $Matches[1] }
@@ -76,6 +79,7 @@ jobs:
           "upstream=$upstream" >> $env:GITHUB_OUTPUT
           "maaUtils=$maaUtils" >> $env:GITHUB_OUTPUT
           "buildCommit=$buildCommit" >> $env:GITHUB_OUTPUT
+          exit 0
 
       - name: Setup sccache
         id: sccache
