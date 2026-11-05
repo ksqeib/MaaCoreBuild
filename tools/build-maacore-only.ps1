@@ -94,7 +94,7 @@ $effectiveParallel = $Parallel
 if ($Config -eq "Debug") {
     $debugBoost = Join-Path $RepoRoot "deps\debug\lib\boost_regexd.lib"
     if (-not (Test-Path $debugBoost)) {
-        throw 'Debug dependencies are not installed. Run tools/bootstrap-standalone.ps1 -ReleaseOnly:$false first.'
+        throw 'Debug dependencies are not installed. Run tools/bootstrap-standalone.ps1 -Full first.'
     }
 }
 

@@ -16,12 +16,21 @@
     It is copied from -FastDeployFrom when given, otherwise from an existing
     deps/ tree, otherwise from the previous dependency bundle.
 
+    Boost.Regex and zlib can be reused from a prebuilt build-libs bundle instead
+    of downloading their official sources and compiling them. Pass its extracted
+    directory with -BuildLibsFrom, or use -OnlyBuildLibs to produce such a tree
+    (used by tools/pack-build-libs.ps1).
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\build-upstream-deps.ps1
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\build-upstream-deps.ps1 `
         -FastDeployFrom C:\path\to\old\deps
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\tools\build-upstream-deps.ps1 `
+        -OnlyBuildLibs -Full -DepsDir C:\temp\build-libs
 #>
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
@@ -29,11 +38,18 @@ param(
     [string]$CacheDir = "",
     [string]$FastDeployFrom = "",
     [string]$FastDeployUrl = "https://github.com/ksqeib/MaaCoreBuild/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip",
+    [string]$BuildLibsFrom = "",
     [switch]$ReleaseOnly = $true,
+    [switch]$Full,
+    [switch]$OnlyBuildLibs,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Full) {
+    $ReleaseOnly = $false
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -237,13 +253,72 @@ function Resolve-FastDeploySource {
     return $root
 }
 
+function Resolve-BuildLibsSource {
+    param(
+        [string]$Root,
+        [bool]$NeedDebug
+    )
+
+    if (-not (Test-Path (Join-Path $Root "include\boost\version.hpp"))) {
+        $nested = Join-Path $Root "deps"
+        if (Test-Path (Join-Path $nested "include\boost\version.hpp")) {
+            $Root = $nested
+        }
+    }
+
+    $required = @(
+        "include\boost\version.hpp",
+        "include\zlib.h",
+        "lib\boost_regex.lib",
+        "lib\zlib.lib"
+    )
+    if ($NeedDebug) {
+        $required += @(
+            "debug\lib\boost_regexd.lib",
+            "debug\lib\zlibd.lib"
+        )
+    }
+
+    foreach ($relative in $required) {
+        if (-not (Test-Path (Join-Path $Root $relative))) {
+            throw "build-libs bundle is incomplete, missing: $(Join-Path $Root $relative)"
+        }
+    }
+
+    $infoPath = Join-Path $Root "build-info.json"
+    if (Test-Path $infoPath) {
+        $info = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json
+        $expectedBoost = [string]$versions.dependencies.boost.version
+        $expectedZlib = [string]$versions.dependencies.zlib.version
+        if (-not [string]::IsNullOrWhiteSpace([string]$info.boost) -and ([string]$info.boost -ne $expectedBoost)) {
+            throw "build-libs bundle has Boost $($info.boost), but deps-versions.json expects $expectedBoost. Publish a new build-libs bundle or update deps-versions.json."
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$info.zlib) -and ([string]$info.zlib -ne $expectedZlib)) {
+            throw "build-libs bundle has zlib $($info.zlib), but deps-versions.json expects $expectedZlib. Publish a new build-libs bundle or update deps-versions.json."
+        }
+        Write-Host "  build-libs: Boost $($info.boost), zlib $($info.zlib), MSVC $($info.msvcToolset), CRT $($info.crtRelease)/$($info.crtDebug)"
+    }
+
+    return $Root
+}
+
 $versionsPath = Join-Path $PSScriptRoot "deps-versions.json"
 if (-not (Test-Path $versionsPath)) {
     throw "Dependency version manifest not found: $versionsPath"
 }
 $versions = Get-Content -LiteralPath $versionsPath -Raw | ConvertFrom-Json
 
-$assets = foreach ($name in @("opencv", "onnxruntime", "boost", "zlib")) {
+$sourceDeps = if ($OnlyBuildLibs) {
+    @("boost", "zlib")
+}
+elseif (-not [string]::IsNullOrWhiteSpace($BuildLibsFrom)) {
+    @("opencv", "onnxruntime")
+}
+else {
+    @("opencv", "onnxruntime", "boost", "zlib")
+}
+
+$assets = foreach ($name in $sourceDeps) {
     $dep = $versions.dependencies.$name
     if ($null -eq $dep -or [string]::IsNullOrWhiteSpace($dep.file) -or [string]::IsNullOrWhiteSpace($dep.url) -or [string]::IsNullOrWhiteSpace($dep.sha256)) {
         throw "deps-versions.json is missing file/url/sha256 for '$name'"
@@ -280,13 +355,21 @@ try {
     $zlibRoot = Join-Path $staging "zlib"
 
     Invoke-Step "Extract upstream artifacts" {
-        $process = Start-Process -FilePath $opencvExe -ArgumentList "-o$opencvRoot", "-y" -Wait -PassThru -NoNewWindow
-        if ($process.ExitCode -ne 0) {
-            throw "OpenCV self-extractor failed with exit code $($process.ExitCode)"
+        if ($sourceDeps -contains "opencv") {
+            $process = Start-Process -FilePath $opencvExe -ArgumentList "-o$opencvRoot", "-y" -Wait -PassThru -NoNewWindow
+            if ($process.ExitCode -ne 0) {
+                throw "OpenCV self-extractor failed with exit code $($process.ExitCode)"
+            }
         }
-        Expand-ZipArchive $ortNupkg $ortRoot
-        Expand-TarGz $boostTar $boostRoot
-        Expand-TarGz $zlibTar $zlibRoot
+        if ($sourceDeps -contains "onnxruntime") {
+            Expand-ZipArchive $ortNupkg $ortRoot
+        }
+        if ($sourceDeps -contains "boost") {
+            Expand-TarGz $boostTar $boostRoot
+        }
+        if ($sourceDeps -contains "zlib") {
+            Expand-TarGz $zlibTar $zlibRoot
+        }
     }
 
     $opencvBuild = Join-Path $opencvRoot "opencv\build"
@@ -296,26 +379,52 @@ try {
     $boostSrc = Join-Path $boostRoot "boost_1_89_0"
     $zlibSrc = Join-Path $zlibRoot "zlib-1.3.1"
 
-    foreach ($required in @($opencvReleaseDll, $opencvDebugDll, $ortReleaseDll, $boostSrc, $zlibSrc)) {
-        if (-not (Test-Path $required)) {
-            throw "Upstream artifact is incomplete, missing: $required"
+    $required = @()
+    if ($sourceDeps -contains "opencv") {
+        $required += @($opencvReleaseDll, $opencvDebugDll)
+    }
+    if ($sourceDeps -contains "onnxruntime") {
+        $required += $ortReleaseDll
+    }
+    if ($sourceDeps -contains "boost") {
+        $required += $boostSrc
+    }
+    if ($sourceDeps -contains "zlib") {
+        $required += $zlibSrc
+    }
+    foreach ($requiredPath in $required) {
+        if (-not (Test-Path $requiredPath)) {
+            throw "Upstream artifact is incomplete, missing: $requiredPath"
         }
     }
 
-    $fastDeployRoot = Resolve-FastDeploySource
-    Write-Host "==> FastDeploy source: $fastDeployRoot"
+    $fastDeployRoot = $null
+    if (-not $OnlyBuildLibs) {
+        $fastDeployRoot = Resolve-FastDeploySource
+        Write-Host "==> FastDeploy source: $fastDeployRoot"
 
-    $directmlDll = Join-Path $fastDeployRoot "bin\DirectML.dll"
-    if (-not (Test-Path $directmlDll)) {
-        $directmlDll = Join-Path $fastDeployRoot "DirectML.dll"
+        $directmlDll = Join-Path $fastDeployRoot "bin\DirectML.dll"
+        if (-not (Test-Path $directmlDll)) {
+            $directmlDll = Join-Path $fastDeployRoot "DirectML.dll"
+        }
+        if (-not (Test-Path $directmlDll)) {
+            throw "DirectML.dll is not present in the FastDeploy bundle: $fastDeployRoot"
+        }
     }
-    if (-not (Test-Path $directmlDll)) {
-        throw "DirectML.dll is not present in the FastDeploy bundle: $fastDeployRoot"
+
+    $buildLibsRoot = ""
+    if (-not [string]::IsNullOrWhiteSpace($BuildLibsFrom)) {
+        $buildLibsRoot = Resolve-BuildLibsSource -Root $BuildLibsFrom -NeedDebug (-not $ReleaseOnly)
+        Write-Host "==> Build libs source: $buildLibsRoot"
     }
 
     $zlibBuild = Join-Path $staging "zlib-build"
     $zlibInstall = Join-Path $staging "zlib-install"
     Invoke-Step "Build zlib (upstream source)" {
+        if (-not [string]::IsNullOrWhiteSpace($buildLibsRoot)) {
+            Write-Host "  skipped: using prebuilt build-libs bundle"
+            return
+        }
         & cmake -S $zlibSrc -B $zlibBuild -DBUILD_SHARED_LIBS=OFF -DZLIB_BUILD_EXAMPLES=OFF "-DCMAKE_INSTALL_PREFIX=$zlibInstall"
         if ($LASTEXITCODE -ne 0) { throw "zlib configure failed" }
         & cmake --build $zlibBuild --config Release --target install --parallel 8
@@ -329,6 +438,10 @@ try {
     $boostRegexSrc = Join-Path $staging "boost-regex-src"
     $boostRegexBuild = Join-Path $staging "boost-regex-build"
     Invoke-Step "Build Boost.Regex (upstream source)" {
+        if (-not [string]::IsNullOrWhiteSpace($buildLibsRoot)) {
+            Write-Host "  skipped: using prebuilt build-libs bundle"
+            return
+        }
         New-Item -ItemType Directory -Path $boostRegexSrc -Force | Out-Null
         $boostSrcCmake = $boostSrc -replace '\\', '/'
         @"
@@ -352,20 +465,46 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
         }
     }
 
-    $boostRegexRelease = Get-ChildItem $boostRegexBuild -Recurse -File -Filter "boost_regex.lib" |
-        Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
+    $boostRegexRelease = $null
     $boostRegexDebug = $null
-    if (-not $ReleaseOnly) {
-        $boostRegexDebug = Get-ChildItem $boostRegexBuild -Recurse -File -Filter "boost_regex.lib" |
-            Where-Object { $_.FullName -match '\\Debug\\' } | Select-Object -First 1
-    }
-    if ($null -eq $boostRegexRelease -or ((-not $ReleaseOnly) -and $null -eq $boostRegexDebug)) {
-        throw "Boost.Regex libraries were not produced under $boostRegexBuild"
+    if ([string]::IsNullOrWhiteSpace($buildLibsRoot)) {
+        $boostRegexRelease = Get-ChildItem $boostRegexBuild -Recurse -File -Filter "boost_regex.lib" |
+            Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
+        if (-not $ReleaseOnly) {
+            $boostRegexDebug = Get-ChildItem $boostRegexBuild -Recurse -File -Filter "boost_regex.lib" |
+                Where-Object { $_.FullName -match '\\Debug\\' } | Select-Object -First 1
+        }
+        if ($null -eq $boostRegexRelease -or ((-not $ReleaseOnly) -and $null -eq $boostRegexDebug)) {
+            throw "Boost.Regex libraries were not produced under $boostRegexBuild"
+        }
     }
 
-    $tools = Get-MsvcTools
+    if ($OnlyBuildLibs) {
+        Invoke-Step "Assemble build-libs tree" {
+            foreach ($dir in @("include", "lib", "debug\lib")) {
+                New-Item -ItemType Directory -Path (Join-Path $stageDeps $dir) -Force | Out-Null
+            }
 
-    Invoke-Step "Assemble dependency tree" {
+            Copy-Item (Join-Path $boostSrc "boost") (Join-Path $stageDeps "include\boost") -Recurse -Force
+            Copy-Item (Join-Path $zlibInstall "include\zlib.h") (Join-Path $stageDeps "include\zlib.h") -Force
+            Copy-Item (Join-Path $zlibInstall "include\zconf.h") (Join-Path $stageDeps "include\zconf.h") -Force
+            Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "lib\zlib.lib") -Force
+            Copy-Item $boostRegexRelease.FullName (Join-Path $stageDeps "lib\boost_regex.lib") -Force
+            if (-not $ReleaseOnly) {
+                if (Test-Path (Join-Path $zlibInstall "lib\zlibstaticd.lib")) {
+                    Copy-Item (Join-Path $zlibInstall "lib\zlibstaticd.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+                }
+                else {
+                    Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+                }
+                Copy-Item $boostRegexDebug.FullName (Join-Path $stageDeps "debug\lib\boost_regexd.lib") -Force
+            }
+        }
+    }
+    else {
+        $tools = Get-MsvcTools
+
+        Invoke-Step "Assemble dependency tree" {
         $dirs = @(
             "include",
             "lib",
@@ -384,9 +523,20 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
 
         Copy-Item (Join-Path $opencvBuild "include") (Join-Path $stageDeps "include\opencv4") -Recurse -Force
         Copy-Item (Join-Path $ortRoot "build\native\include") (Join-Path $stageDeps "include\onnxruntime") -Recurse -Force
-        Copy-Item (Join-Path $boostSrc "boost") (Join-Path $stageDeps "include\boost") -Recurse -Force
-        Copy-Item (Join-Path $zlibInstall "include\zlib.h") (Join-Path $stageDeps "include\zlib.h") -Force
-        Copy-Item (Join-Path $zlibInstall "include\zconf.h") (Join-Path $stageDeps "include\zconf.h") -Force
+        if (-not [string]::IsNullOrWhiteSpace($buildLibsRoot)) {
+            Copy-Item (Join-Path $buildLibsRoot "include\boost") (Join-Path $stageDeps "include\boost") -Recurse -Force
+            Copy-Item (Join-Path $buildLibsRoot "include\zlib.h") (Join-Path $stageDeps "include\zlib.h") -Force
+            Copy-Item (Join-Path $buildLibsRoot "include\zconf.h") (Join-Path $stageDeps "include\zconf.h") -Force
+            $buildInfo = Join-Path $buildLibsRoot "build-info.json"
+            if (Test-Path $buildInfo) {
+                Copy-Item $buildInfo (Join-Path $stageDeps "build-info.json") -Force
+            }
+        }
+        else {
+            Copy-Item (Join-Path $boostSrc "boost") (Join-Path $stageDeps "include\boost") -Recurse -Force
+            Copy-Item (Join-Path $zlibInstall "include\zlib.h") (Join-Path $stageDeps "include\zlib.h") -Force
+            Copy-Item (Join-Path $zlibInstall "include\zconf.h") (Join-Path $stageDeps "include\zconf.h") -Force
+        }
 
         Copy-Item (Join-Path $fastDeployRoot "include\fastdeploy") (Join-Path $stageDeps "include\fastdeploy") -Recurse -Force
         foreach ($extra in @("Eigen", "eigen3", "nlohmann")) {
@@ -399,19 +549,20 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
         Copy-Item (Join-Path $fastDeployRoot "lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "lib\fastdeploy_ppocr.lib") -Force
         Copy-Item (Join-Path $fastDeployRoot "bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "bin\fastdeploy_ppocr_maa.dll") -Force
         Copy-Item (Join-Path $fastDeployRoot "share\fastdeploy_ppocr") (Join-Path $stageDeps "share\fastdeploy_ppocr") -Recurse -Force
-        if (-not $ReleaseOnly) {
-            if (Test-Path (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib")) {
-                Copy-Item (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
-            }
-            else {
-                Copy-Item (Join-Path $fastDeployRoot "lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
-            }
-            if (Test-Path (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll")) {
-                Copy-Item (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
-            }
-            else {
-                Copy-Item (Join-Path $fastDeployRoot "bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
-            }
+        # fastdeploy_ppocrConfig.cmake validates every configuration it exports,
+        # including Debug. Keep these two tiny Debug files even in release-only
+        # mode so `find_package(fastdeploy_ppocr)` can configure.
+        if (Test-Path (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib")) {
+            Copy-Item (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
+        }
+        else {
+            Copy-Item (Join-Path $fastDeployRoot "lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
+        }
+        if (Test-Path (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll")) {
+            Copy-Item (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
+        }
+        else {
+            Copy-Item (Join-Path $fastDeployRoot "bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
         }
 
         Copy-Item $opencvReleaseDll (Join-Path $stageDeps "bin\opencv_world4_maa.dll") -Force
@@ -423,18 +574,28 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
             Copy-Item $directmlDll (Join-Path $stageDeps "debug\bin\DirectML.dll") -Force
         }
 
-        Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "lib\zlib.lib") -Force
-        if (-not $ReleaseOnly) {
-            if (Test-Path (Join-Path $zlibInstall "lib\zlibstaticd.lib")) {
-                Copy-Item (Join-Path $zlibInstall "lib\zlibstaticd.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
-            }
-            else {
-                Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+        if (-not [string]::IsNullOrWhiteSpace($buildLibsRoot)) {
+            Copy-Item (Join-Path $buildLibsRoot "lib\boost_regex.lib") (Join-Path $stageDeps "lib\boost_regex.lib") -Force
+            Copy-Item (Join-Path $buildLibsRoot "lib\zlib.lib") (Join-Path $stageDeps "lib\zlib.lib") -Force
+            if (-not $ReleaseOnly) {
+                Copy-Item (Join-Path $buildLibsRoot "debug\lib\boost_regexd.lib") (Join-Path $stageDeps "debug\lib\boost_regexd.lib") -Force
+                Copy-Item (Join-Path $buildLibsRoot "debug\lib\zlibd.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
             }
         }
-        Copy-Item $boostRegexRelease.FullName (Join-Path $stageDeps "lib\boost_regex.lib") -Force
-        if (-not $ReleaseOnly) {
-            Copy-Item $boostRegexDebug.FullName (Join-Path $stageDeps "debug\lib\boost_regexd.lib") -Force
+        else {
+            Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "lib\zlib.lib") -Force
+            if (-not $ReleaseOnly) {
+                if (Test-Path (Join-Path $zlibInstall "lib\zlibstaticd.lib")) {
+                    Copy-Item (Join-Path $zlibInstall "lib\zlibstaticd.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+                }
+                else {
+                    Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+                }
+            }
+            Copy-Item $boostRegexRelease.FullName (Join-Path $stageDeps "lib\boost_regex.lib") -Force
+            if (-not $ReleaseOnly) {
+                Copy-Item $boostRegexDebug.FullName (Join-Path $stageDeps "debug\lib\boost_regexd.lib") -Force
+            }
         }
 
         New-ImportLibrary -DllPath (Join-Path $stageDeps "bin\opencv_world4_maa.dll") -LibraryName "opencv_world4_maa.dll" -OutputLib (Join-Path $stageDeps "lib\opencv_world4.lib") -Tools $tools
@@ -471,6 +632,7 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
             }
         }
     }
+    }
 
     Invoke-Step "Install deps/" {
         if (Test-Path $DepsDir) {
@@ -481,12 +643,24 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
 
     Write-Host ""
     Write-Host "Upstream dependency tree ready: $DepsDir"
-    Write-Host "  OpenCV     4.12.0 official"
-    Write-Host "  ONNXRuntime 1.19.2 DirectML official"
-    Write-Host "  DirectML   from FastDeploy bundle (official Microsoft binary)"
-    Write-Host "  Boost      1.89.0 official source (Regex only)"
-    Write-Host "  zlib       1.3.1 official source"
-    Write-Host "  FastDeploy from: $fastDeployRoot"
+    if ($OnlyBuildLibs) {
+        Write-Host "  Build libs: Boost $($versions.dependencies.boost.version) (Regex only), zlib $($versions.dependencies.zlib.version)"
+        Write-Host "  Configurations: $(if ($ReleaseOnly) { 'Release' } else { 'Release + Debug' })"
+    }
+    else {
+        Write-Host "  OpenCV     4.12.0 official"
+        Write-Host "  ONNXRuntime 1.19.2 DirectML official"
+        Write-Host "  DirectML   from FastDeploy bundle (official Microsoft binary)"
+        if (-not [string]::IsNullOrWhiteSpace($buildLibsRoot)) {
+            Write-Host "  Boost      $($versions.dependencies.boost.version) from build-libs ($buildLibsRoot)"
+            Write-Host "  zlib       $($versions.dependencies.zlib.version) from build-libs"
+        }
+        else {
+            Write-Host "  Boost      $($versions.dependencies.boost.version) official source (Regex only)"
+            Write-Host "  zlib       $($versions.dependencies.zlib.version) official source"
+        }
+        Write-Host "  FastDeploy from: $fastDeployRoot"
+    }
 }
 finally {
     Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue

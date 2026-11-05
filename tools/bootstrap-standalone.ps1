@@ -2,10 +2,15 @@ param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$DepsTarget = "",
     [switch]$ReleaseOnly = $true,
+    [switch]$Full,
     [switch]$ForceDepsDownload
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Full) {
+    $ReleaseOnly = $false
+}
 
 function Invoke-External {
     param(

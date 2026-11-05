@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "bundleVersion": "v1",
+  "targets": {
+    "windows-x64": {
+      "url": "https://github.com/ksqeib/MaaCoreBuild/releases/download/build-libs-v1/MaaCore-build-libs-windows-x64-v1.zip",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "build": {
+        "boost": "1.89.0",
+        "zlib": "1.3.1",
+        "msvcToolset": "",
+        "crtRelease": "MD",
+        "crtDebug": "MDd"
+      },
+      "files": {}
+    }
+  }
+}

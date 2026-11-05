@@ -8,12 +8,13 @@
 - `deps/` 在 `bootstrap` 时本地组装：
   - OpenCV 4.12.0（官方 Windows 包，固定 URL）
   - ONNXRuntime 1.19.2 DirectML（官方 NuGet，固定 URL）
-  - Boost 1.89.0（官方源码，固定 URL，仅编译 Regex）
-  - zlib 1.3.1（官方源码，固定 URL，静态库）
+  - Boost 1.89.0（优先从 `build-libs-v1` 预编译包获取；缺失时回退官方源码，仅编译 Regex）
+  - zlib 1.3.1（优先从 `build-libs-v1` 预编译包获取；缺失时回退官方源码，静态库）
 - FastDeploy 1.0.7 是唯一没有匹配上游 Windows 预编译包的组件，单独发布一个约 15 MB 的小包（含 `DirectML.dll`）。
-- `MaaUtils` 以源码形式 vendored 在仓库中，随工程编译。
+- Boost.Regex / zlib 的静态库单独发布为约 27 MB 的 `build-libs-v1` 小包；它只是构建期输入，不进 SDK。
+- `MaaUtils` 由 `tools/deps-versions.json` 固定上游 ref，`prepare-source.ps1` 拉取，不 vendored。
 - `tools/fastdeploy-manifest.json` 现在锚定的是 **FastDeploy 小包**的 URL + SHA-256。
-- 首次 bootstrap 需下载约 400 MB 官方包并编译 Boost.Regex / zlib；默认 `-ReleaseOnly`，只编 Release 版。需要 Debug 依赖时用 `-ReleaseOnly:$false`。之后直接复用 `deps/`。
+- 首次 bootstrap 仍需下载 OpenCV / ONNXRuntime / FastDeploy（约 200 MB）；Boost/zlib 默认直接使用 `build-libs`，不再下载约 190 MB 的 Boost 源码。默认 `-ReleaseOnly`，只组装 Release 依赖。需要 Debug 依赖时用 `-Full`（或在 pwsh 中直接传 `-ReleaseOnly:$false`）。之后直接复用 `deps/`。
 - 实测通过：Release / Debug 构建、`AsstLoadResource` / `AsstCreate`、FastDeploy OCR 推理、ONNXRuntime 会话、Boost.Process 子进程。
 
 ## 目录与职责
@@ -32,7 +33,7 @@ deps/                        不入库；bootstrap 时本地生成
 ├── share/                   FastDeploy 的 CMake config
 └── runtime/maa-x64-windows/ 构建产物复制用运行时 DLL（含 msvc-debug/）
 
-MaaUtils/                    入库，源码，随工程编译
+MaaUtils/                    由 prepare-source.ps1 从上游拉取，随工程编译
 cmake/
 ├── maadeps.cmake            CMake 适配层（triplet、maadeps_install、OpenCV/ZLIB 路径）
 └── upstream/
@@ -40,9 +41,11 @@ cmake/
     └── BoostConfig.cmake    官方 Boost + 编译宏
 tools/
 ├── fastdeploy-manifest.json FastDeploy 小包清单（URL + sha256 + 版本）
-├── fetch-deps.ps1           下载 FastDeploy 小包 + 调用本地依赖组装
-├── build-upstream-deps.ps1  下载官方包、编译 Boost/zlib、组装 deps/
+├── build-libs-manifest.json Boost.Regex / zlib 构建期依赖包清单
+├── fetch-deps.ps1           下载 FastDeploy + build-libs 小包 + 调用本地依赖组装
+├── build-upstream-deps.ps1  下载官方包、必要时编译 Boost/zlib、组装 deps/
 ├── pack-fastdeploy.ps1      把 deps/ 中的 FastDeploy 打成小包
+├── pack-build-libs.ps1      把 deps/ 中的 Boost.Regex / zlib 打成小包
 ├── bootstrap-standalone.ps1 构建前统一入口
 └── package-sdk.ps1          打 SDK 发布包
 ```
@@ -59,12 +62,13 @@ powershell -ExecutionPolicy Bypass -File .\tools\build-maacore-only.ps1 -SkipBoo
 1. 读取 `tools/fastdeploy-manifest.json`，按平台选择 target（如 `windows-x64`）；
 2. 命中 `deps/.bundle-version` 标记就直接返回；
 3. 否则下载 FastDeploy 小包到 `.bootstrap/deps/`，校验 SHA-256 后解压；
-4. 调用 `build-upstream-deps.ps1`：
-   - 从官方固定 URL 下载 OpenCV / ORT / Boost / zlib（缓存到 `.bootstrap/upstream-deps`）
-   - 编译 Boost.Regex 与 zlib
+4. 若 `tools/build-libs-manifest.json` 有已发布包，同样下载并解压 Boost.Regex / zlib；
+5. 调用 `build-upstream-deps.ps1`：
+   - 从官方固定 URL 下载 OpenCV / ORT（缓存到 `.bootstrap/upstream-deps`）
+   - Boost/zlib：有 build-libs 时直接复制；没有时下载官方源码并编译
    - 生成 `_maa` 导入库
    - 组装 `deps/`
-5. 校验 `include/`、`lib/`、`share/`、`runtime/maa-x64-windows/` 是否齐全。
+6. 校验 `include/`、`lib/`、`share/`、`runtime/maa-x64-windows/` 是否齐全。
 
 ## 从官方源码/发布物重建 deps
 
@@ -74,6 +78,9 @@ powershell -File .\tools\fetch-deps.ps1 -Force
 
 # 只重跑官方依赖组装（使用现有 deps/ 或 manifest 中的 FastDeploy）
 powershell -File .\tools\build-upstream-deps.ps1
+
+# 强制从官方源码编译 Boost.Regex / zlib（跳过 build-libs）
+powershell -File .\tools\build-upstream-deps.ps1 -Full
 
 # 指定本地 FastDeploy 来源
 powershell -File .\tools\build-upstream-deps.ps1 -FastDeployFrom C:\path\to\fastdeploy
@@ -108,7 +115,7 @@ powershell -File .\tools\pack-fastdeploy.ps1 -BundleVersion v1 -UpdateManifest
 
 - 大小：约 15.2 MB
 - SHA-256：`0995ec629595419925f948fd0d0c6df2ab354531c275915fd77ad7f57050431c`
-- URL：`https://github.com/ksqeib/MaaCore/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip`
+- URL：`https://github.com/ksqeib/MaaCoreBuild/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip`
 
 内容包括：
 
@@ -123,6 +130,36 @@ debug/bin/fastdeploy_ppocr_maa.dll
 ```
 
 > 这个 FastDeploy 包是 **bootstrap 的构建期输入**（头文件、导入库、DLL、DirectML）。客户端运行库使用下面的统一 runtime bundle，不需要直接处理这个包。
+
+## 发布 build-libs 小包（Boost.Regex + zlib）
+
+```powershell
+# 1. 生成完整依赖树（Release + Debug）
+.\tools\build-upstream-deps.ps1 -OnlyBuildLibs -Full -DepsDir .\build-libs-deps
+
+# 2. 打包并更新 manifest
+.\tools\pack-build-libs.ps1 -DepsDir .\build-libs-deps -BundleVersion v1 -UpdateManifest
+```
+
+生成 `dist/MaaCore-build-libs-windows-x64-v1.zip`（约 27 MB），上传到 tag 为 `build-libs-v1` 的 GitHub Release，再提交 `tools/build-libs-manifest.json`。
+
+内容包括：
+
+```
+include/boost/...
+include/zlib.h
+include/zconf.h
+lib/boost_regex.lib
+lib/zlib.lib
+debug/lib/boost_regexd.lib
+debug/lib/zlibd.lib
+build-info.json
+```
+
+- 只给构建机用，不进 SDK、不进 runtime bundle。
+- 静态库与 MSVC 工具链/CRT 绑定；`build-info.json` 记录 Boost/zlib 版本、MSVC toolset、CRT。
+- 升级 Boost / zlib / VS 工具链后，把 `BundleVersion` 升到 `v2` 并重新发布。
+- CI 使用 `.github/workflows/build-libs.yml`，与 nightly 完全独立。
 
 ## 发布 SDK
 
@@ -153,7 +190,7 @@ dist/MaaCore-sdk-windows-x64-v0.1.4-symbols.7z
   - `runtime.windows-x64.bundle`：统一运行库 zip 的 URL / SHA-256 / size
   - `runtime.windows-x64.files`：每个运行库 DLL 的依赖名、版本、SHA-256
 
-CI 中由 `.github/workflows/maacore-release.yml` 在 `v*` tag 或手动触发时自动完成构建和发布。
+发布包由本地 `tools/package-sdk.ps1` 生成；nightly 由 `.github/workflows/nightly.yml` 构建并发布到滚动 `nightly` release。
 
 ## 发布运行库 bundle
 
@@ -207,9 +244,9 @@ Boost / zlib 是静态链接，不在 bundle 里。客户端只需要：
 
 ## 风险与边界
 
-1. **首次 bootstrap 变慢**：需要下载约 400 MB 官方包并编译 Boost.Regex / zlib；之后有本地 `.bootstrap/upstream-deps` 缓存和 `deps/` 复用。
+1. **首次 bootstrap 仍要下载 OpenCV / ORT / FastDeploy**：约 200 MB；Boost/zlib 默认直接使用 `build-libs`，不再下载 Boost 源码或现场编译。之后有本地 `.bootstrap/deps` 缓存和 `deps/` 复用。
 2. **ORT Min/Max NaN patch 被去掉**：如果某个模型在 `Min/Max` 中遇到 NaN，结果会与旧 MaaDeps 版不同；当前 OCR/ONNX 测试未触发。
 3. **Boost.Asio socket 继承 patch 被去掉**：PlayTools 的 TCP socket 不再强制 `NO_HANDLE_INHERIT`；子进程侧仍有 MaaUtils 的 `prevent_inherit`。
 4. **FastDeploy 仍是现成二进制**：不是从源码现场编译，但 Windows 上它本来就没有 MaaDeps 源码 patch。
-5. **Debug 依赖已包含**：官方 OpenCV debug DLL、Debug Boost.Regex、Debug zlib、FastDeploy debug DLL 都会组装进 deps，Debug 构建可正常链接和加载。
-6. **升级依赖**：官方版本/URL/SHA-256 在 `tools/build-upstream-deps.ps1` 顶部；修改后跑 `fetch-deps.ps1 -Force`。
+5. **Debug 依赖按需组装**：默认 `-ReleaseOnly` 不生成 Debug Boost/zlib/OpenCV/运行库；需要 Debug 时用 `-Full`。FastDeploy 的 Debug 导入库/DLL 仍会保留，因为它的 CMake config 会校验所有配置。
+6. **升级依赖**：官方版本/URL/SHA-256 在 `tools/deps-versions.json`；修改后跑 `fetch-deps.ps1 -Force`。Boost/zlib 还需重新发布 `build-libs`。

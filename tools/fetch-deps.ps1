@@ -30,12 +30,18 @@ param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$Target = "",
     [string]$ManifestPath = (Join-Path $PSScriptRoot "fastdeploy-manifest.json"),
+    [string]$BuildLibsManifestPath = (Join-Path $PSScriptRoot "build-libs-manifest.json"),
     [string]$CacheDir = "",
     [switch]$ReleaseOnly = $true,
+    [switch]$Full,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Full) {
+    $ReleaseOnly = $false
+}
 
 function Get-HostTarget {
     $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
@@ -146,8 +152,39 @@ if ([string]::IsNullOrWhiteSpace($bundleVersion)) {
     $bundleVersion = $expectedHash
 }
 
+$buildLibsEntry = $null
+$buildLibsVersion = "none"
+$buildLibsHash = "none"
+if (Test-Path $BuildLibsManifestPath) {
+    try {
+        $buildLibsManifest = Get-Content -LiteralPath $BuildLibsManifestPath -Raw | ConvertFrom-Json
+        $candidate = $buildLibsManifest.targets.$Target
+        $candidateHash = ""
+        if ($null -ne $candidate -and -not [string]::IsNullOrWhiteSpace([string]$candidate.sha256)) {
+            $candidateHash = ([string]$candidate.sha256).ToLowerInvariant().Replace("sha256:", "")
+        }
+        if (($candidateHash -match '^[0-9a-f]{64}$') -and ($candidateHash -ne ('0' * 64)) -and (-not [string]::IsNullOrWhiteSpace([string]$candidate.url))) {
+            $buildLibsEntry = $candidate
+            $buildLibsHash = $candidateHash
+            $buildLibsVersion = [string]$buildLibsManifest.bundleVersion
+            if ([string]::IsNullOrWhiteSpace($buildLibsVersion)) {
+                $buildLibsVersion = $candidateHash
+            }
+        }
+        else {
+            Write-Warning "No published build-libs bundle for '$Target'; Boost/zlib will be built from official sources."
+        }
+    }
+    catch {
+        Write-Warning "Could not read build-libs manifest '$BuildLibsManifestPath': $($_.Exception.Message)"
+    }
+}
+else {
+    Write-Warning "build-libs manifest not found: $BuildLibsManifestPath. Boost/zlib will be built from official sources."
+}
+
 $depMode = if ($ReleaseOnly.IsPresent) { "release-only" } else { "full" }
-$manifestHash = Get-StringSha256 ($bundleVersion + "|" + $Target + "|" + $expectedHash + "|" + $depMode)
+$manifestHash = Get-StringSha256 ($bundleVersion + "|" + $Target + "|" + $expectedHash + "|" + $depMode + "|" + $buildLibsVersion + "|" + $buildLibsHash)
 
 if (-not $Force -and (Test-Path $markerPath)) {
     $marker = (Get-Content -LiteralPath $markerPath -Raw).Trim()
@@ -225,9 +262,78 @@ if (-not (Test-Path (Join-Path $fastDeployRoot "include\fastdeploy"))) {
     throw "FastDeploy bundle extracted but include/fastdeploy is missing: $fastDeployRoot"
 }
 
+$buildLibsRoot = ""
+if ($null -ne $buildLibsEntry) {
+    $buildLibsArchiveName = Get-ArchiveFileName $buildLibsEntry.url
+    $buildLibsArchivePath = Join-Path $CacheDir $buildLibsArchiveName
+    $buildLibsNeedsDownload = $true
+    if ((Test-Path $buildLibsArchivePath) -and (-not $Force)) {
+        $cachedBuildLibsHash = (Get-FileHash -LiteralPath $buildLibsArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($cachedBuildLibsHash -eq $buildLibsHash) {
+            Write-Host "Using cached build-libs bundle: $buildLibsArchivePath"
+            $buildLibsNeedsDownload = $false
+        }
+    }
+
+    if ($buildLibsNeedsDownload) {
+        $buildLibsPartial = "$buildLibsArchivePath.part"
+        if (Test-Path $buildLibsPartial) {
+            Remove-Item -LiteralPath $buildLibsPartial -Force
+        }
+        Invoke-Download -Url $buildLibsEntry.url -Destination $buildLibsPartial
+        $actualBuildLibsHash = (Get-FileHash -LiteralPath $buildLibsPartial -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualBuildLibsHash -ne $buildLibsHash) {
+            Remove-Item -LiteralPath $buildLibsPartial -Force -ErrorAction SilentlyContinue
+            throw "build-libs bundle SHA-256 mismatch. Expected $buildLibsHash, got $actualBuildLibsHash. The download may be corrupt or the manifest is out of date."
+        }
+        Move-Item -LiteralPath $buildLibsPartial -Destination $buildLibsArchivePath -Force
+    }
+
+    $buildLibsRoot = Join-Path $CacheDir ("build-libs-" + $buildLibsVersion)
+    if (Test-Path $buildLibsRoot) {
+        Remove-Item $buildLibsRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $buildLibsRoot -Force | Out-Null
+    Write-Host "Extracting $buildLibsArchiveName to $buildLibsRoot"
+    Expand-Archive -LiteralPath $buildLibsArchivePath -DestinationPath $buildLibsRoot -Force
+
+    if ((-not (Test-Path (Join-Path $buildLibsRoot "include\boost"))) -or
+        (-not (Test-Path (Join-Path $buildLibsRoot "lib\boost_regex.lib"))) -or
+        (-not (Test-Path (Join-Path $buildLibsRoot "lib\zlib.lib")))) {
+        throw "build-libs bundle extracted but its layout is incomplete: $buildLibsRoot"
+    }
+    if ($null -ne $buildLibsEntry.files) {
+        foreach ($property in $buildLibsEntry.files.PSObject.Properties) {
+            $expectedFileHash = ([string]$property.Value.sha256).ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace($expectedFileHash)) {
+                continue
+            }
+            $filePath = Join-Path $buildLibsRoot ($property.Name -replace '/', '\')
+            if (-not (Test-Path $filePath)) {
+                throw "build-libs bundle is missing $($property.Name)"
+            }
+            $actualFileHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualFileHash -ne $expectedFileHash) {
+                throw "build-libs file hash mismatch for $($property.Name). Expected $expectedFileHash, got $actualFileHash."
+            }
+        }
+    }
+    Write-Host "Using build-libs bundle $buildLibsVersion (Boost/zlib will not be compiled)."
+}
+
 $buildScript = Join-Path $PSScriptRoot "build-upstream-deps.ps1"
 $upstreamCache = Join-Path $RepoRoot ".bootstrap\upstream-deps"
-& $buildScript -RepoRoot $RepoRoot -DepsDir $depsDir -FastDeployFrom $fastDeployRoot -CacheDir $upstreamCache -ReleaseOnly:$($ReleaseOnly.IsPresent)
+$buildArgs = @{
+    RepoRoot      = $RepoRoot
+    DepsDir       = $depsDir
+    FastDeployFrom = $fastDeployRoot
+    CacheDir      = $upstreamCache
+    ReleaseOnly   = $ReleaseOnly
+}
+if (-not [string]::IsNullOrWhiteSpace($buildLibsRoot)) {
+    $buildArgs.BuildLibsFrom = $buildLibsRoot
+}
+& $buildScript @buildArgs
 
 $requiredPaths = @(
     (Join-Path $depsDir "include"),

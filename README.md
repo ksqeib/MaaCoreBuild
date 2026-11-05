@@ -9,6 +9,7 @@ MaaCore 的独立构建/发布仓库。
 - `cmake/`、`tools/`：依赖组装、构建、打包脚本
 - `scripts/prepare-source.ps1`：拉取上游代码、MaaUtils 和 overlay
 - `.github/workflows/nightly.yml`：每日 nightly 构建与发布
+- `.github/workflows/build-libs.yml`：单独构建/发布 Boost.Regex + zlib 构建期依赖包
 
 MaaUtils 不在本仓库内嵌，由 `tools/deps-versions.json` 固定到上游 `MaaXYZ/MaaUtils` 的 ref 或 commit，`prepare-source.ps1` 拉取后直接注入 `MAADEPS_DIR` / `MAA_DEPS_CONFIG` 适配。这样既不会漂移，也能在需要时显式升级。
 
@@ -55,11 +56,15 @@ powershell -File .\tools\build-maacore-only.ps1 -SkipBootstrap -UseSccache -NoFr
 powershell -File .\tools\package-sdk.ps1 -Version nightly -OutputDir D:\self\maa\MaaCoreBuild\dist
 ```
 
-`bootstrap` 默认 `-ReleaseOnly`：只编 Release 版 Boost.Regex / zlib，nightly 不需要 Debug 依赖。需要 Debug 构建时：
+`bootstrap` 默认 `-ReleaseOnly`：只使用 Release 版 Boost.Regex / zlib 和运行库，nightly 不需要 Debug 依赖。需要 Debug 依赖时：
 
 ```powershell
-powershell -File .\tools\bootstrap-standalone.ps1 -ReleaseOnly:$false
+powershell -File .\tools\bootstrap-standalone.ps1 -Full
 ```
+
+> `powershell -File` 不能直接传 `-ReleaseOnly:$false`（参数会按字符串处理）。在 pwsh 里直接调用脚本时仍可用 `.\tools\bootstrap-standalone.ps1 -ReleaseOnly:$false`。
+
+Boost.Regex / zlib 默认从 `build-libs-v1` 预编译包获取，不再下载 Boost 源码或现场编译。若 `tools/build-libs-manifest.json` 还是占位符或没有对应平台的包，会自动回退到官方源码构建。
 
 ## Nightly
 
@@ -85,5 +90,19 @@ SDK 里的 `deps.json` 使用 schemaVersion 2，运行库指向 `runtime-v1` bun
 
 - FastDeploy 构建包：`fastdeploy-v1`
 - 统一运行库包：`runtime-v1`
+- 构建期静态库包：`build-libs-v1`（Boost.Regex + zlib，头文件 + Release/Debug `.lib`）
 - 依赖版本：`tools/deps-versions.json`
 - 运行库清单：`tools/runtime-manifest.json`
+- 构建期静态库清单：`tools/build-libs-manifest.json`
+
+`build-libs` 只给构建机使用，不会进入 SDK；Boost / zlib 已静态链接进 `MaaUtils.dll` / `MaaCore.dll`。
+
+单独发布 `build-libs`：
+
+```powershell
+# 本地：先准备完整（Release + Debug）依赖树，再打包
+.\tools\build-upstream-deps.ps1 -OnlyBuildLibs -Full -DepsDir .\build-libs-deps
+.\tools\pack-build-libs.ps1 -DepsDir .\build-libs-deps -BundleVersion v1 -UpdateManifest
+```
+
+CI 使用 `.github/workflows/build-libs.yml`（手动触发或推送 `build-libs-v*` tag）。它只发布 release asset 并产出更新后的 manifest artifact，不会自动 push；提交 `tools/build-libs-manifest.json` 后 nightly 才会使用新包。
