@@ -60,9 +60,17 @@ jobs:
           $lastMaaUtils = ""
           $lastBuild = ""
           $body = ""
-          gh release view nightly --json body --jq .body 2>$null | ForEach-Object { $body = $_ }
+          $releaseJson = gh release view nightly --json body 2>$null
           # "release not found" is expected on the first run; do not let its exit code fail the step.
           $LASTEXITCODE = 0
+          if (-not [string]::IsNullOrWhiteSpace($releaseJson)) {
+            try {
+              $body = [string](($releaseJson | ConvertFrom-Json).body)
+            }
+            catch {
+              $body = ""
+            }
+          }
           if (-not [string]::IsNullOrWhiteSpace($body)) {
             if ($body -match 'upstream-commit=([0-9a-f]+)') { $lastUpstream = $Matches[1] }
             if ($body -match 'maa-utils-commit=([0-9a-f]+)') { $lastMaaUtils = $Matches[1] }
