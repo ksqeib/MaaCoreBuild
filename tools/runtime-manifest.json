@@ -4,7 +4,7 @@
     "targets":  {
                     "windows-x64":  {
                                         "bundle":  {
-                                                       "url":  "https://github.com/ksqeib/MaaCore/releases/download/runtime-v1/MaaCore-runtime-windows-x64-v1.zip",
+                                                       "url":  "https://github.com/ksqeib/MaaCoreBuild/releases/download/runtime-v1/MaaCore-runtime-windows-x64-v1.zip",
                                                        "sha256":  "e6f040a80973bb2149d87aa2b428130c1a9be77ff5f571bb0b08927a6c900f9e",
                                                        "size":  38417030
                                                    },

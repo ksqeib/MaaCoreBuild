@@ -3,7 +3,7 @@
   "bundleVersion": "v1",
   "targets": {
     "windows-x64": {
-      "url": "https://github.com/ksqeib/MaaCore/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip",
+      "url": "https://github.com/ksqeib/MaaCoreBuild/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip",
       "sha256": "0995ec629595419925f948fd0d0c6df2ab354531c275915fd77ad7f57050431c"
     }
   }

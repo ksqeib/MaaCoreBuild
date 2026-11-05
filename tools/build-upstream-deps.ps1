@@ -28,7 +28,7 @@ param(
     [string]$DepsDir = "",
     [string]$CacheDir = "",
     [string]$FastDeployFrom = "",
-    [string]$FastDeployUrl = "https://github.com/ksqeib/MaaCore/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip",
+    [string]$FastDeployUrl = "https://github.com/ksqeib/MaaCoreBuild/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip",
     [switch]$Force
 )
 
