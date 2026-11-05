@@ -1,6 +1,7 @@
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$DepsTarget = "",
+    [switch]$ReleaseOnly = $true,
     [switch]$ForceDepsDownload
 )
 
@@ -48,6 +49,7 @@ Invoke-Step "Ensure prebuilt dependencies" {
     $fetchArgs = @{
         RepoRoot     = $RepoRoot
         ManifestPath = (Join-Path $PSScriptRoot "fastdeploy-manifest.json")
+        ReleaseOnly  = $ReleaseOnly
     }
     if (-not [string]::IsNullOrWhiteSpace($DepsTarget)) {
         $fetchArgs.Target = $DepsTarget

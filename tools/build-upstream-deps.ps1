@@ -29,6 +29,7 @@ param(
     [string]$CacheDir = "",
     [string]$FastDeployFrom = "",
     [string]$FastDeployUrl = "https://github.com/ksqeib/MaaCoreBuild/releases/download/fastdeploy-v1/MaaCore-fastdeploy-windows-x64-v1.zip",
+    [switch]$ReleaseOnly = $true,
     [switch]$Force
 )
 
@@ -319,8 +320,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "zlib configure failed" }
         & cmake --build $zlibBuild --config Release --target install --parallel 8
         if ($LASTEXITCODE -ne 0) { throw "zlib release build failed" }
-        & cmake --build $zlibBuild --config Debug --target install --parallel 8
-        if ($LASTEXITCODE -ne 0) { throw "zlib debug build failed" }
+        if (-not $ReleaseOnly) {
+            & cmake --build $zlibBuild --config Debug --target install --parallel 8
+            if ($LASTEXITCODE -ne 0) { throw "zlib debug build failed" }
+        }
     }
 
     $boostRegexSrc = Join-Path $staging "boost-regex-src"
@@ -343,15 +346,20 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
         if ($LASTEXITCODE -ne 0) { throw "Boost.Regex configure failed" }
         & cmake --build $boostRegexBuild --config Release --parallel 8
         if ($LASTEXITCODE -ne 0) { throw "Boost.Regex release build failed" }
-        & cmake --build $boostRegexBuild --config Debug --parallel 8
-        if ($LASTEXITCODE -ne 0) { throw "Boost.Regex debug build failed" }
+        if (-not $ReleaseOnly) {
+            & cmake --build $boostRegexBuild --config Debug --parallel 8
+            if ($LASTEXITCODE -ne 0) { throw "Boost.Regex debug build failed" }
+        }
     }
 
     $boostRegexRelease = Get-ChildItem $boostRegexBuild -Recurse -File -Filter "boost_regex.lib" |
         Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
-    $boostRegexDebug = Get-ChildItem $boostRegexBuild -Recurse -File -Filter "boost_regex.lib" |
-        Where-Object { $_.FullName -match '\\Debug\\' } | Select-Object -First 1
-    if ($null -eq $boostRegexRelease -or $null -eq $boostRegexDebug) {
+    $boostRegexDebug = $null
+    if (-not $ReleaseOnly) {
+        $boostRegexDebug = Get-ChildItem $boostRegexBuild -Recurse -File -Filter "boost_regex.lib" |
+            Where-Object { $_.FullName -match '\\Debug\\' } | Select-Object -First 1
+    }
+    if ($null -eq $boostRegexRelease -or ((-not $ReleaseOnly) -and $null -eq $boostRegexDebug)) {
         throw "Boost.Regex libraries were not produced under $boostRegexBuild"
     }
 
@@ -391,40 +399,52 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
         Copy-Item (Join-Path $fastDeployRoot "lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "lib\fastdeploy_ppocr.lib") -Force
         Copy-Item (Join-Path $fastDeployRoot "bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "bin\fastdeploy_ppocr_maa.dll") -Force
         Copy-Item (Join-Path $fastDeployRoot "share\fastdeploy_ppocr") (Join-Path $stageDeps "share\fastdeploy_ppocr") -Recurse -Force
-        if (Test-Path (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib")) {
-            Copy-Item (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
-        }
-        else {
-            Copy-Item (Join-Path $fastDeployRoot "lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
-        }
-        if (Test-Path (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll")) {
-            Copy-Item (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
-        }
-        else {
-            Copy-Item (Join-Path $fastDeployRoot "bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
+        if (-not $ReleaseOnly) {
+            if (Test-Path (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib")) {
+                Copy-Item (Join-Path $fastDeployRoot "debug\lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
+            }
+            else {
+                Copy-Item (Join-Path $fastDeployRoot "lib\fastdeploy_ppocr.lib") (Join-Path $stageDeps "debug\lib\fastdeploy_ppocr.lib") -Force
+            }
+            if (Test-Path (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll")) {
+                Copy-Item (Join-Path $fastDeployRoot "debug\bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
+            }
+            else {
+                Copy-Item (Join-Path $fastDeployRoot "bin\fastdeploy_ppocr_maa.dll") (Join-Path $stageDeps "debug\bin\fastdeploy_ppocr_maa.dll") -Force
+            }
         }
 
         Copy-Item $opencvReleaseDll (Join-Path $stageDeps "bin\opencv_world4_maa.dll") -Force
-        Copy-Item $opencvDebugDll (Join-Path $stageDeps "debug\bin\opencv_world4d_maa.dll") -Force
         Copy-Item $ortReleaseDll (Join-Path $stageDeps "bin\onnxruntime_maa.dll") -Force
-        Copy-Item $ortReleaseDll (Join-Path $stageDeps "debug\bin\onnxruntime_maa.dll") -Force
         Copy-Item $directmlDll (Join-Path $stageDeps "bin\DirectML.dll") -Force
-        Copy-Item $directmlDll (Join-Path $stageDeps "debug\bin\DirectML.dll") -Force
+        if (-not $ReleaseOnly) {
+            Copy-Item $opencvDebugDll (Join-Path $stageDeps "debug\bin\opencv_world4d_maa.dll") -Force
+            Copy-Item $ortReleaseDll (Join-Path $stageDeps "debug\bin\onnxruntime_maa.dll") -Force
+            Copy-Item $directmlDll (Join-Path $stageDeps "debug\bin\DirectML.dll") -Force
+        }
 
         Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "lib\zlib.lib") -Force
-        if (Test-Path (Join-Path $zlibInstall "lib\zlibstaticd.lib")) {
-            Copy-Item (Join-Path $zlibInstall "lib\zlibstaticd.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
-        }
-        else {
-            Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+        if (-not $ReleaseOnly) {
+            if (Test-Path (Join-Path $zlibInstall "lib\zlibstaticd.lib")) {
+                Copy-Item (Join-Path $zlibInstall "lib\zlibstaticd.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+            }
+            else {
+                Copy-Item (Join-Path $zlibInstall "lib\zlibstatic.lib") (Join-Path $stageDeps "debug\lib\zlibd.lib") -Force
+            }
         }
         Copy-Item $boostRegexRelease.FullName (Join-Path $stageDeps "lib\boost_regex.lib") -Force
-        Copy-Item $boostRegexDebug.FullName (Join-Path $stageDeps "debug\lib\boost_regexd.lib") -Force
+        if (-not $ReleaseOnly) {
+            Copy-Item $boostRegexDebug.FullName (Join-Path $stageDeps "debug\lib\boost_regexd.lib") -Force
+        }
 
         New-ImportLibrary -DllPath (Join-Path $stageDeps "bin\opencv_world4_maa.dll") -LibraryName "opencv_world4_maa.dll" -OutputLib (Join-Path $stageDeps "lib\opencv_world4.lib") -Tools $tools
-        New-ImportLibrary -DllPath (Join-Path $stageDeps "debug\bin\opencv_world4d_maa.dll") -LibraryName "opencv_world4d_maa.dll" -OutputLib (Join-Path $stageDeps "debug\lib\opencv_world4d.lib") -Tools $tools
+        if (-not $ReleaseOnly) {
+            New-ImportLibrary -DllPath (Join-Path $stageDeps "debug\bin\opencv_world4d_maa.dll") -LibraryName "opencv_world4d_maa.dll" -OutputLib (Join-Path $stageDeps "debug\lib\opencv_world4d.lib") -Tools $tools
+        }
         New-ImportLibrary -DllPath (Join-Path $stageDeps "bin\onnxruntime_maa.dll") -LibraryName "onnxruntime_maa.dll" -OutputLib (Join-Path $stageDeps "lib\onnxruntime.lib") -Tools $tools
-        Copy-Item (Join-Path $stageDeps "lib\onnxruntime.lib") (Join-Path $stageDeps "debug\lib\onnxruntime.lib") -Force
+        if (-not $ReleaseOnly) {
+            Copy-Item (Join-Path $stageDeps "lib\onnxruntime.lib") (Join-Path $stageDeps "debug\lib\onnxruntime.lib") -Force
+        }
 
         Copy-Item (Join-Path $PSScriptRoot "..\cmake\upstream\OpenCVConfig.cmake") (Join-Path $stageDeps "lib\cmake\opencv4\OpenCVConfig.cmake") -Force
         Copy-Item (Join-Path $PSScriptRoot "..\cmake\upstream\BoostConfig.cmake") (Join-Path $stageDeps "lib\cmake\Boost-1.89.0\BoostConfig.cmake") -Force
@@ -439,14 +459,16 @@ set_target_properties(boost_regex PROPERTIES OUTPUT_NAME boost_regex)
             Copy-Item (Join-Path $stageDeps "bin\$name") (Join-Path $stageDeps "runtime\maa-x64-windows\$name") -Force
         }
 
-        $debugRuntime = @(
-            "opencv_world4d_maa.dll",
-            "onnxruntime_maa.dll",
-            "DirectML.dll",
-            "fastdeploy_ppocr_maa.dll"
-        )
-        foreach ($name in $debugRuntime) {
-            Copy-Item (Join-Path $stageDeps "debug\bin\$name") (Join-Path $stageDeps "runtime\maa-x64-windows\msvc-debug\$name") -Force
+        if (-not $ReleaseOnly) {
+            $debugRuntime = @(
+                "opencv_world4d_maa.dll",
+                "onnxruntime_maa.dll",
+                "DirectML.dll",
+                "fastdeploy_ppocr_maa.dll"
+            )
+            foreach ($name in $debugRuntime) {
+                Copy-Item (Join-Path $stageDeps "debug\bin\$name") (Join-Path $stageDeps "runtime\maa-x64-windows\msvc-debug\$name") -Force
+            }
         }
     }
 

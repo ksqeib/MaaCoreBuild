@@ -31,6 +31,7 @@ param(
     [string]$Target = "",
     [string]$ManifestPath = (Join-Path $PSScriptRoot "fastdeploy-manifest.json"),
     [string]$CacheDir = "",
+    [switch]$ReleaseOnly = $true,
     [switch]$Force
 )
 
@@ -145,7 +146,8 @@ if ([string]::IsNullOrWhiteSpace($bundleVersion)) {
     $bundleVersion = $expectedHash
 }
 
-$manifestHash = Get-StringSha256 ($bundleVersion + "|" + $Target + "|" + $expectedHash)
+$depMode = if ($ReleaseOnly.IsPresent) { "release-only" } else { "full" }
+$manifestHash = Get-StringSha256 ($bundleVersion + "|" + $Target + "|" + $expectedHash + "|" + $depMode)
 
 if (-not $Force -and (Test-Path $markerPath)) {
     $marker = (Get-Content -LiteralPath $markerPath -Raw).Trim()
@@ -225,7 +227,7 @@ if (-not (Test-Path (Join-Path $fastDeployRoot "include\fastdeploy"))) {
 
 $buildScript = Join-Path $PSScriptRoot "build-upstream-deps.ps1"
 $upstreamCache = Join-Path $RepoRoot ".bootstrap\upstream-deps"
-& $buildScript -RepoRoot $RepoRoot -DepsDir $depsDir -FastDeployFrom $fastDeployRoot -CacheDir $upstreamCache
+& $buildScript -RepoRoot $RepoRoot -DepsDir $depsDir -FastDeployFrom $fastDeployRoot -CacheDir $upstreamCache -ReleaseOnly:$($ReleaseOnly.IsPresent)
 
 $requiredPaths = @(
     (Join-Path $depsDir "include"),

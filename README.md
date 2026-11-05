@@ -55,6 +55,12 @@ powershell -File .\tools\build-maacore-only.ps1 -SkipBootstrap -UseSccache -NoFr
 powershell -File .\tools\package-sdk.ps1 -Version nightly -OutputDir D:\self\maa\MaaCoreBuild\dist
 ```
 
+`bootstrap` 默认 `-ReleaseOnly`：只编 Release 版 Boost.Regex / zlib，nightly 不需要 Debug 依赖。需要 Debug 构建时：
+
+```powershell
+powershell -File .\tools\bootstrap-standalone.ps1 -ReleaseOnly:$false
+```
+
 ## Nightly
 
 `.github/workflows/nightly.yml`：

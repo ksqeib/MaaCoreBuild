@@ -13,7 +13,7 @@
 - FastDeploy 1.0.7 是唯一没有匹配上游 Windows 预编译包的组件，单独发布一个约 15 MB 的小包（含 `DirectML.dll`）。
 - `MaaUtils` 以源码形式 vendored 在仓库中，随工程编译。
 - `tools/fastdeploy-manifest.json` 现在锚定的是 **FastDeploy 小包**的 URL + SHA-256。
-- 首次 bootstrap 需下载约 400 MB 官方包并编译 Boost.Regex / zlib；之后直接复用 `deps/`。
+- 首次 bootstrap 需下载约 400 MB 官方包并编译 Boost.Regex / zlib；默认 `-ReleaseOnly`，只编 Release 版。需要 Debug 依赖时用 `-ReleaseOnly:$false`。之后直接复用 `deps/`。
 - 实测通过：Release / Debug 构建、`AsstLoadResource` / `AsstCreate`、FastDeploy OCR 推理、ONNXRuntime 会话、Boost.Process 子进程。
 
 ## 目录与职责

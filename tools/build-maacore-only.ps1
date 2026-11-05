@@ -91,6 +91,13 @@ $buildPath = Join-Path $RepoRoot $BuildDir
 $effectiveGenerator = $Generator
 $effectiveParallel = $Parallel
 
+if ($Config -eq "Debug") {
+    $debugBoost = Join-Path $RepoRoot "deps\debug\lib\boost_regexd.lib"
+    if (-not (Test-Path $debugBoost)) {
+        throw 'Debug dependencies are not installed. Run tools/bootstrap-standalone.ps1 -ReleaseOnly:$false first.'
+    }
+}
+
 if ($effectiveParallel -le 0) {
     $effectiveParallel = [Math]::Max(1, [Environment]::ProcessorCount)
     Write-Host "Build parallelism: auto-detected $effectiveParallel logical processor(s)."

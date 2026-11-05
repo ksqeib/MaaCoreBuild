@@ -133,9 +133,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .work/MaaCore/deps
-          key: maacore-deps-${{ runner.os }}-${{ hashFiles('tools/deps-versions.json', 'tools/fastdeploy-manifest.json', 'tools/build-upstream-deps.ps1', 'tools/fetch-deps.ps1', 'overlay/CMakeLists.txt', 'cmake/**') }}
+          key: maacore-deps-${{ runner.os }}-release-${{ hashFiles('tools/deps-versions.json', 'tools/fastdeploy-manifest.json', 'tools/build-upstream-deps.ps1', 'tools/fetch-deps.ps1', 'overlay/CMakeLists.txt', 'cmake/**') }}
           restore-keys: |
-            maacore-deps-${{ runner.os }}-
+            maacore-deps-${{ runner.os }}-release-
 
       - name: Cache upstream downloads
         if: steps.check.outputs.skip != 'true'
@@ -170,7 +170,7 @@ jobs:
         shell: pwsh
         working-directory: .work/MaaCore
         run: |
-          powershell -ExecutionPolicy Bypass -File .\tools\bootstrap-standalone.ps1
+          powershell -ExecutionPolicy Bypass -File .\tools\bootstrap-standalone.ps1 -ReleaseOnly
 
       - name: Build MaaCore
         if: steps.check.outputs.skip != 'true'
