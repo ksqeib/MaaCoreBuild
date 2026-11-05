@@ -5,13 +5,12 @@ MaaCore 的独立构建/发布仓库。
 本仓库不保存 MaaCore 源码，只保存：
 
 - `overlay/CMakeLists.txt`：把上游 MaaCore 改造成独立构建的 CMake 入口
-- `patches/maa-utils-standalone.patch`：对上游 MaaUtils 的最小构建适配
 - `include/upstream`、`include/3rd`：MaaCore 需要的头文件
 - `cmake/`、`tools/`：依赖组装、构建、打包脚本
 - `scripts/prepare-source.ps1`：拉取上游代码、MaaUtils 和 overlay
 - `.github/workflows/nightly.yml`：每日 nightly 构建与发布
 
-MaaUtils 不在本仓库内嵌，由 `tools/deps-versions.json` 固定到上游 `MaaXYZ/MaaUtils` 的某个 commit，`prepare-source.ps1` 拉取后再应用 `patches/maa-utils-standalone.patch`。这样既不会漂移，也能在需要时显式升级。
+MaaUtils 不在本仓库内嵌，由 `tools/deps-versions.json` 固定到上游 `MaaXYZ/MaaUtils` 的 ref 或 commit，`prepare-source.ps1` 拉取后直接注入 `MAADEPS_DIR` / `MAA_DEPS_CONFIG` 适配。这样既不会漂移，也能在需要时显式升级。
 
 ## 工作方式
 
@@ -43,10 +42,7 @@ MaaCore 会大量 include `MaaUtils/...` 并链接 `MaaUtils.dll`。
 
 - `tools/deps-versions.json` 固定 `MaaXYZ/MaaUtils` 的 repo + ref（当前 `master`）
 - `scripts/prepare-source.ps1` 拉取该 ref 的最新 commit
-- 应用 `patches/maa-utils-standalone.patch`：
-  - 允许外层工程覆盖 `MAADEPS_DIR` / 使用 `MAA_DEPS_CONFIG`
-
-升级/回退 MaaUtils 时修改 `maautils.ref`（也可以改成 `commit` 固定 SHA）后重新跑 `prepare-source`。如果 patch 上下文变化，`git apply` 会直接失败，避免静默漂移。
+- 直接在 `MaaUtils.cmake` 中注入 `MAADEPS_DIR` / `MAA_DEPS_CONFIG` 适配（不依赖 patch 文件的换行符）
 
 ## 本地构建
 

@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Clones the upstream-sync branch (or a local MaaCore checkout), clones
-    MaaUtils at the commit pinned in tools/deps-versions.json, applies the
-    MaaUtils build patches, then overlays:
+    MaaUtils at the commit/ref pinned in tools/deps-versions.json, injects the
+    standalone MAADEPS/MAA_DEPS_CONFIG hook, then overlays:
       overlay/CMakeLists.txt  -> MaaCore/CMakeLists.txt
       include/                -> MaaCore/include/
       cmake/                  -> MaaCore/cmake/
@@ -120,15 +120,32 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to checkout MaaUtils ref $fetchRef" }
 $maaUtilsResolved = git -C $maaUtilsDir rev-parse HEAD
 Write-Host "    MaaUtils commit: $maaUtilsResolved"
 
-$patchDir = Join-Path $RepoRoot "patches"
-if (Test-Path $patchDir) {
-    Get-ChildItem -LiteralPath $patchDir -File -Filter "maa-utils-*.patch" | Sort-Object Name | ForEach-Object {
-        Write-Host "==> Applying MaaUtils patch: $($_.Name)"
-        & git -C $maaUtilsDir apply --check $_.FullName
-        if ($LASTEXITCODE -ne 0) { throw "MaaUtils patch does not apply: $($_.FullName)" }
-        & git -C $maaUtilsDir apply $_.FullName
-        if ($LASTEXITCODE -ne 0) { throw "Failed to apply MaaUtils patch: $($_.FullName)" }
-    }
+Write-Host "==> Applying MaaUtils standalone deps hook"
+$maaUtilsCmake = Join-Path $maaUtilsDir "MaaUtils.cmake"
+$content = [System.IO.File]::ReadAllText($maaUtilsCmake)
+$pattern = '(?m)^[ \t]*set\(MAADEPS_DIR \$\{MAAUTILS_DIR\}/MaaDeps\)[ \t]*\r?\n[ \t]*include\(\$\{MAADEPS_DIR\}/maadeps\.cmake\)'
+$match = [regex]::Match($content, $pattern)
+if (-not $match.Success) {
+    throw "Could not find the MAADEPS block in $maaUtilsCmake"
+}
+$replacement = @(
+    '# Allow a super-project to pin its own dependency directory (e.g. a repo-local'
+    '# deps/ tree) instead of the submodule''s MaaDeps. Default remains MaaDeps.'
+    'if(NOT DEFINED MAADEPS_DIR)'
+    '    set(MAADEPS_DIR ${MAAUTILS_DIR}/MaaDeps)'
+    'endif()'
+    '# The super-project may provide its own CMake adapter (e.g. a repo-local'
+    '# prebuilt deps/ tree) while MaaDeps is not present.'
+    'if(DEFINED MAA_DEPS_CONFIG AND EXISTS "${MAA_DEPS_CONFIG}")'
+    '    include(${MAA_DEPS_CONFIG})'
+    'else()'
+    '    include(${MAADEPS_DIR}/maadeps.cmake)'
+    'endif()'
+) -join "`n"
+$content = $content.Remove($match.Index, $match.Length).Insert($match.Index, $replacement)
+[System.IO.File]::WriteAllText($maaUtilsCmake, $content, (New-Object System.Text.UTF8Encoding($false)))
+if (-not ([System.IO.File]::ReadAllText($maaUtilsCmake).Contains('MAA_DEPS_CONFIG'))) {
+    throw "Failed to inject MAA_DEPS_CONFIG into $maaUtilsCmake"
 }
 
 Write-Host "==> Overlaying standalone build files"
