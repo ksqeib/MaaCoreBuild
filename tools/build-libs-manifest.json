@@ -4,16 +4,49 @@
   "targets": {
     "windows-x64": {
       "url": "https://github.com/ksqeib/MaaCoreBuild/releases/download/build-libs-v1/MaaCore-build-libs-windows-x64-v1.zip",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "size": 0,
+      "sha256": "2cdee3d27e761b12acd5d5b4b307b65532a5d7eea583447e59cfb424cd17845c",
+      "size": 28283005,
       "build": {
         "boost": "1.89.0",
         "zlib": "1.3.1",
-        "msvcToolset": "",
+        "msvcToolset": "14.51.36231",
         "crtRelease": "MD",
         "crtDebug": "MDd"
       },
-      "files": {}
+      "files": {
+        "include/boost/version.hpp": {
+          "dependency": "boost",
+          "sha256": "24fc8cb1636e0fa167c8f7e1cfef99f3642e5928918e1671fe5585bbffe02b07"
+        },
+        "include/zlib.h": {
+          "dependency": "zlib",
+          "sha256": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c"
+        },
+        "include/zconf.h": {
+          "dependency": "zlib",
+          "sha256": "b4962930aabbbc4b54a67220b4b3ed2cae69a13688c06a564bda1bc7429d2ab2"
+        },
+        "lib/boost_regex.lib": {
+          "dependency": "boost",
+          "config": "Release",
+          "sha256": "d210725369f49c57ed7f159a9d2f35b3ba5e2ff2714651b3e8107736a1e1fa4d"
+        },
+        "lib/zlib.lib": {
+          "dependency": "zlib",
+          "config": "Release",
+          "sha256": "070242e1502ed3bfac8e3cb506c0ee9f6825096f1e101c70f3934609bbc248b6"
+        },
+        "debug/lib/boost_regexd.lib": {
+          "dependency": "boost",
+          "config": "Debug",
+          "sha256": "65d5bda41c487f883e894a826d9a996897fd48bfdba3448b4b49dcabc40fcc35"
+        },
+        "debug/lib/zlibd.lib": {
+          "dependency": "zlib",
+          "config": "Debug",
+          "sha256": "3b5e63a1f9145b159e4ea73f2199bdf9f1e9e91057ac143766beb16bf7fce241"
+        }
+      }
     }
   }
 }
