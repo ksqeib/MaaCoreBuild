@@ -130,4 +130,4 @@ jobs:
           }
           $assets = @(Get-ChildItem -Path dist -File -Filter "MaaCore-sdk-*.7z" | ForEach-Object { $_.FullName })
           if ($assets.Count -eq 0) { throw "No nightly SDK assets found in dist/" }
-          & gh release upload nightly @assets --clobber
+          & gh release upload nightly --clobber @assets
