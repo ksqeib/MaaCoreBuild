@@ -20,7 +20,7 @@ No GUI, packaging of `resource/`, or runtime functional validation is required i
 
 - Keep API headers in `include/upstream/` (tracked in this repo).
 - Keep required third-party headers in `include/3rd/` (tracked in this repo).
-- Keep `MaaUtils/` as an external pinned checkout (MaaXYZ/MaaUtils), not a vendored copy. `prepare-source.ps1` applies `patches/maa-utils-standalone.patch` after checkout.
+- Keep `MaaUtils/` as an external checkout configured by `tools/deps-versions.json` (`maautils.ref` or `maautils.commit`), not a vendored copy. `prepare-source.ps1` applies `patches/maa-utils-standalone.patch` after checkout.
 - Keep binary deps through `deps/`, assembled locally by `tools/fetch-deps.ps1` / `tools/build-upstream-deps.ps1`.
 - OpenCV / ONNXRuntime / Boost / zlib are downloaded from their official fixed URLs; do not publish a full build-deps bundle.
 - `tools/fastdeploy-manifest.json` pins the build-time FastDeploy bundle (headers/libs/DLLs/DirectML).
