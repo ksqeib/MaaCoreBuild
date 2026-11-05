@@ -24,6 +24,31 @@ MaaUtils 不在本仓库内嵌，由 `tools/deps-versions.json` 固定到上游 
 3. 注入 `MaaUtils/`、`include/`、`cmake/`、`tools/`
 4. 在 `.work/MaaCore` 中执行 bootstrap / build / package
 
+## MaaUtils
+
+MaaUtils 是 MAA 的通用工具库，不是游戏逻辑，主要包含：
+
+- 日志（Logger / LoggerUtils）
+- UTF-8/UTF-16 编码转换（Encoding）
+- 图像读写（ImageIo）
+- IOStream / 子进程管道 / Socket（ADB、Controller 使用）
+- 平台、Runtime、Port、Conf 等基础封装
+- GPU 设备选择（GpuOption）
+- UUID、Buffer、Singleton、ScopeLeave 等通用工具
+- meojson 头文件
+
+MaaCore 会大量 include `MaaUtils/...` 并链接 `MaaUtils.dll`。
+
+本仓库**不再 vendored MaaUtils 源码**，而是：
+
+- `tools/deps-versions.json` 固定 `MaaXYZ/MaaUtils` 的 repo + commit
+- `scripts/prepare-source.ps1` 拉取该 commit
+- 应用 `patches/maa-utils-standalone.patch`：
+  - 允许外层工程覆盖 `MAADEPS_DIR` / 使用 `MAA_DEPS_CONFIG`
+  - 兼容 Boost 1.89 的 `boost::process::v1`
+
+升级 MaaUtils 时改 `maautils.commit` 后重新跑 `prepare-source`。如果 patch 上下文变化，`git apply` 会直接失败，避免静默漂移。
+
 ## 本地构建
 
 ```powershell
